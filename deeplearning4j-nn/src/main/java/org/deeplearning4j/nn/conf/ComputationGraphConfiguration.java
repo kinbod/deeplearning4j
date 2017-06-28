@@ -243,6 +243,8 @@ public class ComputationGraphConfiguration implements Serializable, Cloneable {
         conf.defaultConfiguration = defaultConfiguration.clone();
         conf.trainingWorkspaceMode = trainingWorkspaceMode;
         conf.inferenceWorkspaceMode = inferenceWorkspaceMode;
+        conf.cacheMode = this.cacheMode;
+        conf.defaultConfiguration.cacheMode = this.cacheMode;
 
         return conf;
     }
@@ -671,6 +673,7 @@ public class ComputationGraphConfiguration implements Serializable, Cloneable {
          * @param outputNames The names of the output layers. This also defines their order.
          */
         public GraphBuilder setOutputs(String... outputNames) {
+            networkOutputs.clear();
             Collections.addAll(networkOutputs, outputNames);
             return this;
         }
