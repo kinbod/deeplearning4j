@@ -26,7 +26,9 @@ import org.apache.commons.lang3.StringUtils;
 import org.deeplearning4j.berkeley.Pair;
 import org.deeplearning4j.berkeley.Triple;
 import org.deeplearning4j.datasets.iterator.AsyncDataSetIterator;
+import org.deeplearning4j.datasets.iterator.MultiDataSetWrapperIterator;
 import org.deeplearning4j.eval.*;
+import org.deeplearning4j.exception.DL4JException;
 import org.deeplearning4j.exception.DL4JInvalidInputException;
 import org.deeplearning4j.nn.api.*;
 import org.deeplearning4j.nn.api.Updater;
@@ -503,6 +505,11 @@ public class MultiLayerNetwork implements Serializable, Classifier, Layer, Neura
             } else {
                 flattenedParams = Nd4j.create(1, paramLength);
                 initializeParams = true;
+            }
+
+            //Set RNG seed, for repeatability between initializations when set
+            if(initializeParams) {
+                Nd4j.getRandom().setSeed(getDefaultConfiguration().getSeed());
             }
 
             // construct multi-layer
@@ -2088,7 +2095,7 @@ public class MultiLayerNetwork implements Serializable, Classifier, Layer, Neura
 
         //Calculate score
         if (!(getOutputLayer() instanceof IOutputLayer)) {
-            throw new IllegalStateException(
+            throw new DL4JException(
                             "Cannot calculate gradient and score with respect to labels: final layer is not an IOutputLayer");
         }
         score = ((IOutputLayer) getOutputLayer()).computeScore(calcL1(true), calcL2(true), true);
@@ -2792,7 +2799,7 @@ public class MultiLayerNetwork implements Serializable, Classifier, Layer, Neura
 
     @Override
     public void fit(MultiDataSetIterator iterator) {
-        throw new DL4JInvalidInputException("MultiLayerNetwork can't handle MultiDataSet. Please consider use of ComputationGraph");
+        fit(new MultiDataSetWrapperIterator(iterator));
     }
 
     @Override
