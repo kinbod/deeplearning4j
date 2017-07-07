@@ -1,5 +1,6 @@
 package org.deeplearning4j.gradientcheck;
 
+import java.io.IOException;
 import lombok.extern.slf4j.Slf4j;
 import org.deeplearning4j.nn.api.OptimizationAlgorithm;
 import org.deeplearning4j.nn.conf.MultiLayerConfiguration;
@@ -30,6 +31,7 @@ import java.util.Random;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
+import org.nd4j.shade.jackson.databind.ObjectMapper;
 
 /**
  * Created by Alex on 12/09/2016.
@@ -50,17 +52,17 @@ public class LossFunctionGradientCheck {
     @Test
     public void lossFunctionGradientCheck() {
 
-        ILossFunction[] lossFunctions = new ILossFunction[] {
-                new LossBinaryXENT(), new LossBinaryXENT(),
+        ILossFunction[] lossFunctions = new ILossFunction[] {new LossBinaryXENT(), new LossBinaryXENT(),
                         new LossCosineProximity(), new LossHinge(), new LossKLD(), new LossKLD(), new LossL1(),
                         new LossL1(), new LossL1(), new LossL2(), new LossL2(), new LossMAE(), new LossMAE(),
                         new LossMAPE(), new LossMAPE(), new LossMCXENT(), new LossMSE(), new LossMSE(), new LossMSLE(),
                         new LossMSLE(), new LossNegativeLogLikelihood(), new LossNegativeLogLikelihood(),
-                        new LossPoisson(), new LossSquaredHinge(),
-                        new LossFMeasure(), new LossFMeasure(2.0), new LossFMeasure(), new LossFMeasure(2.0)};
+                        new LossPoisson(), new LossSquaredHinge(), new LossFMeasure(), new LossFMeasure(2.0),
+                        new LossFMeasure(), new LossFMeasure(2.0),
+                        LossMixtureDensity.builder().gaussians(2).labelWidth(3).build(),
+                        LossMixtureDensity.builder().gaussians(2).labelWidth(3).build(),};
 
-        String[] outputActivationFn = new String[] {
-                "sigmoid", //xent
+        String[] outputActivationFn = new String[] {"sigmoid", //xent
                         "sigmoid", //xent
                         "tanh", //cosine
                         "tanh", //hinge -> trying to predict 1 or -1
@@ -83,15 +85,16 @@ public class LossFunctionGradientCheck {
                         "sigmoid", //nll
                         "softmax", //nll + softmax
                         "sigmoid", //poisson - requires positive predictions due to log... not sure if this is the best option
-                        "tanh",    //squared hinge
+                        "tanh", //squared hinge
                         "sigmoid", //f-measure (binary, single sigmoid output)
                         "sigmoid", //f-measure (binary, single sigmoid output)
                         "softmax", //f-measure (binary, 2-label softmax output)
-                        "softmax"  //f-measure (binary, 2-label softmax output)
+                        "softmax", //f-measure (binary, 2-label softmax output)
+                        "identity", // MixtureDensity
+                        "tanh", // MixtureDensity + tanh
         };
 
-        int[] nOut = new int[] {
-                1, //xent
+        int[] nOut = new int[] {1, //xent
                         3, //xent
                         5, //cosine
                         3, //hinge
@@ -119,6 +122,8 @@ public class LossFunctionGradientCheck {
                         1, //f-measure (binary, single sigmoid output)
                         2, //f-measure (binary, 2-label softmax output)
                         2, //f-measure (binary, 2-label softmax output)
+                        10, // Mixture Density
+                        10, // Mixture Density + tanh
         };
 
         int[] minibatchSizes = new int[] {1, 3};
@@ -197,7 +202,8 @@ public class LossFunctionGradientCheck {
                         new LossMAPE(), new LossMCXENT(), new LossMSE(), new LossMSE(), new LossMSLE(), new LossMSLE(),
                         new LossNegativeLogLikelihood(), new LossNegativeLogLikelihood(), new LossPoisson(),
                         new LossSquaredHinge(), new LossFMeasure(), new LossFMeasure(2.0), new LossFMeasure(),
-                new LossFMeasure(2.0)};
+                        new LossFMeasure(2.0), LossMixtureDensity.builder().gaussians(2).labelWidth(3).build(),
+                        LossMixtureDensity.builder().gaussians(2).labelWidth(3).build(),};
 
         String[] outputActivationFn = new String[] {"sigmoid", //xent
                         "sigmoid", //xent
@@ -221,11 +227,13 @@ public class LossFunctionGradientCheck {
                         "sigmoid", //nll
                         "softmax", //nll + softmax
                         "sigmoid", //poisson - requires positive predictions due to log... not sure if this is the best option
-                        "tanh",    //squared hinge
+                        "tanh", //squared hinge
                         "sigmoid", //f-measure (binary, single sigmoid output)
                         "sigmoid", //f-measure (binary, single sigmoid output)
                         "softmax", //f-measure (binary, 2-label softmax output)
-                        "softmax"  //f-measure (binary, 2-label softmax output)
+                        "softmax", //f-measure (binary, 2-label softmax output)
+                        "identity", // MixtureDensity
+                        "tanh", // MixtureDensity + tanh
         };
 
         int[] nOut = new int[] {1, //xent
@@ -255,6 +263,8 @@ public class LossFunctionGradientCheck {
                         1, //f-measure (binary, single sigmoid output)
                         2, //f-measure (binary, 2-label softmax output)
                         2, //f-measure (binary, 2-label softmax output)
+                        10, // Mixture Density
+                        10, // Mixture Density + tanh
         };
 
         int[] minibatchSizes = new int[] {1, 3};
@@ -269,6 +279,18 @@ public class LossFunctionGradientCheck {
                 String testName = lossFunctions[i] + " - " + outputActivationFn[i] + " - minibatchSize = "
                                 + minibatchSizes[j];
 
+                // Serialize and de-serialize loss function
+                // to ensure that we carry the parameters through
+                // the serializer.
+                try {
+                    ObjectMapper m = new ObjectMapper();
+                    String s = m.writeValueAsString(lossFunctions[i]);
+                    ILossFunction lf2 = m.readValue(s, lossFunctions[i].getClass());
+                    lossFunctions[i] = lf2;
+                } catch (IOException ex) {
+                    ex.printStackTrace();
+                    assertEquals("Tests failed: serialization of " + lossFunctions[i], 0, 1);
+                }
                 Nd4j.getRandom().setSeed(12345);
                 MultiLayerConfiguration conf = new NeuralNetConfiguration.Builder().iterations(1)
                                 .optimizationAlgo(OptimizationAlgorithm.STOCHASTIC_GRADIENT_DESCENT).seed(12345)
@@ -412,25 +434,31 @@ public class LossFunctionGradientCheck {
                 BooleanIndexing.replaceWhere(ret[1], 1, Conditions.greaterThanOrEqual(0.5));
                 break;
             case "LossFMeasure":
-                if(labelsShape[1] == 1){
+                if (labelsShape[1] == 1) {
                     //single binary output case
-                    ret[1] = Nd4j.getExecutioner().exec(new BernoulliDistribution(Nd4j.createUninitialized(labelsShape), 0.5));
-                    if(labelsShape[0] >= 2){
+                    ret[1] = Nd4j.getExecutioner()
+                                    .exec(new BernoulliDistribution(Nd4j.createUninitialized(labelsShape), 0.5));
+                    if (labelsShape[0] >= 2) {
                         //Ensure we have at least one "0" and one "1"
                         int count = ret[1].sumNumber().intValue();
                         if (count == 0) {
-                            ret[1].putScalar(0,0,1.0);
-                        } else if( count == ret[1].size(0)){
-                            ret[1].putScalar(0,0,0.0);
+                            ret[1].putScalar(0, 0, 1.0);
+                        } else if (count == ret[1].size(0)) {
+                            ret[1].putScalar(0, 0, 0.0);
                         }
                     }
                 } else {
                     //"softmax style" binary output case
                     ret[1] = Nd4j.create(labelsShape);
-                    for( int i=0; i<labelsShape[0]; i++ ){
-                        ret[1].putScalar(i, i%labelsShape[1], 1.0);
+                    for (int i = 0; i < labelsShape[0]; i++) {
+                        ret[1].putScalar(i, i % labelsShape[1], 1.0);
                     }
                 }
+                break;
+            case "LossMixtureDensity":
+                LossMixtureDensity lmd = (LossMixtureDensity) l;
+                int labelWidth = lmd.getLabelWidth();
+                ret[1] = Nd4j.rand(new int[] {labelsShape[0], labelWidth});
                 break;
             default:
                 throw new IllegalArgumentException("Unknown class: " + l.getClass().getSimpleName());

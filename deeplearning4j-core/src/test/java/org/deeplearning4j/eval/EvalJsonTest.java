@@ -1,6 +1,7 @@
 package org.deeplearning4j.eval;
 
 import org.deeplearning4j.eval.curves.BaseCurve;
+import org.deeplearning4j.eval.curves.Histogram;
 import org.deeplearning4j.eval.curves.PrecisionRecallCurve;
 import org.deeplearning4j.eval.curves.RocCurve;
 import org.junit.Test;
@@ -18,14 +19,9 @@ public class EvalJsonTest {
     public void testSerdeEmpty() {
         boolean print = false;
 
-        IEvaluation[] arr = new IEvaluation[]{
-                new Evaluation(),
-                new EvaluationBinary(),
-                new ROCBinary(10),
-                new ROCMultiClass(10),
-                new RegressionEvaluation(3),
-                new RegressionEvaluation()
-        };
+        IEvaluation[] arr = new IEvaluation[] {new Evaluation(), new EvaluationBinary(), new ROCBinary(10),
+                        new ROCMultiClass(10), new RegressionEvaluation(3), new RegressionEvaluation(),
+                        new EvaluationCalibration()};
 
         for (IEvaluation e : arr) {
             String json = e.toJson();
@@ -40,46 +36,42 @@ public class EvalJsonTest {
     }
 
     @Test
-    public void testSerde(){
+    public void testSerde() {
         boolean print = true;
         Nd4j.getRandom().setSeed(12345);
 
-        Evaluation evaluation =  new Evaluation();
+        Evaluation evaluation = new Evaluation();
         EvaluationBinary evaluationBinary = new EvaluationBinary();
-        ROC roc =  new ROC(2);
-        ROCBinary roc2 =  new ROCBinary(2);
-        ROCMultiClass roc3 =  new ROCMultiClass(2);
-        RegressionEvaluation regressionEvaluation =  new RegressionEvaluation();
+        ROC roc = new ROC(2);
+        ROCBinary roc2 = new ROCBinary(2);
+        ROCMultiClass roc3 = new ROCMultiClass(2);
+        RegressionEvaluation regressionEvaluation = new RegressionEvaluation();
+        EvaluationCalibration ec = new EvaluationCalibration();
 
 
-        IEvaluation[] arr = new IEvaluation[]{
-                evaluation,
-                evaluationBinary,
-                roc,
-                roc2,
-                roc3,
-                regressionEvaluation
-        };
+        IEvaluation[] arr = new IEvaluation[] {evaluation, evaluationBinary, roc, roc2, roc3, regressionEvaluation, ec};
 
-        INDArray evalLabel = Nd4j.create(10,3);
-        for( int i=0; i<10; i++ ){
-            evalLabel.putScalar(i, i%3, 1.0);
+        INDArray evalLabel = Nd4j.create(10, 3);
+        for (int i = 0; i < 10; i++) {
+            evalLabel.putScalar(i, i % 3, 1.0);
         }
         INDArray evalProb = Nd4j.rand(10, 3);
         evalProb.diviColumnVector(evalProb.sum(1));
         evaluation.eval(evalLabel, evalProb);
         roc3.eval(evalLabel, evalProb);
+        ec.eval(evalLabel, evalProb);
 
-        evalLabel = Nd4j.getExecutioner().exec(new BernoulliDistribution(Nd4j.createUninitialized(10,3), 0.5));
+        evalLabel = Nd4j.getExecutioner().exec(new BernoulliDistribution(Nd4j.createUninitialized(10, 3), 0.5));
         evalProb = Nd4j.rand(10, 3);
         evaluationBinary.eval(evalLabel, evalProb);
         roc2.eval(evalLabel, evalProb);
 
-        evalLabel = Nd4j.getExecutioner().exec(new BernoulliDistribution(Nd4j.createUninitialized(10,1), 0.5));
+        evalLabel = Nd4j.getExecutioner().exec(new BernoulliDistribution(Nd4j.createUninitialized(10, 1), 0.5));
         evalProb = Nd4j.rand(10, 1);
         roc.eval(evalLabel, evalProb);
 
-        regressionEvaluation.eval(Nd4j.rand(10,3), Nd4j.rand(10,3));
+        regressionEvaluation.eval(Nd4j.rand(10, 3), Nd4j.rand(10, 3));
+
 
 
         for (IEvaluation e : arr) {
@@ -95,34 +87,30 @@ public class EvalJsonTest {
     }
 
     @Test
-    public void testSerdeExactRoc(){
+    public void testSerdeExactRoc() {
         Nd4j.getRandom().setSeed(12345);
         boolean print = true;
 
-        ROC roc =  new ROC(0);
-        ROCBinary roc2 =  new ROCBinary(0);
-        ROCMultiClass roc3 =  new ROCMultiClass(0);
+        ROC roc = new ROC(0);
+        ROCBinary roc2 = new ROCBinary(0);
+        ROCMultiClass roc3 = new ROCMultiClass(0);
 
 
-        IEvaluation[] arr = new IEvaluation[]{
-                roc,
-                roc2,
-                roc3
-        };
+        IEvaluation[] arr = new IEvaluation[] {roc, roc2, roc3};
 
-        INDArray evalLabel = Nd4j.create(100,3);
-        for( int i=0; i<100; i++ ){
-            evalLabel.putScalar(i, i%3, 1.0);
+        INDArray evalLabel = Nd4j.create(100, 3);
+        for (int i = 0; i < 100; i++) {
+            evalLabel.putScalar(i, i % 3, 1.0);
         }
         INDArray evalProb = Nd4j.rand(100, 3);
         evalProb.diviColumnVector(evalProb.sum(1));
         roc3.eval(evalLabel, evalProb);
 
-        evalLabel = Nd4j.getExecutioner().exec(new BernoulliDistribution(Nd4j.createUninitialized(100,3), 0.5));
+        evalLabel = Nd4j.getExecutioner().exec(new BernoulliDistribution(Nd4j.createUninitialized(100, 3), 0.5));
         evalProb = Nd4j.rand(100, 3);
         roc2.eval(evalLabel, evalProb);
 
-        evalLabel = Nd4j.getExecutioner().exec(new BernoulliDistribution(Nd4j.createUninitialized(100,1), 0.5));
+        evalLabel = Nd4j.getExecutioner().exec(new BernoulliDistribution(Nd4j.createUninitialized(100, 1), 0.5));
         evalProb = Nd4j.rand(100, 1);
         roc.eval(evalLabel, evalProb);
 
@@ -136,19 +124,19 @@ public class EvalJsonTest {
             IEvaluation fromJson = BaseEvaluation.fromJson(json, BaseEvaluation.class);
             assertEquals(e, fromJson);
 
-            if(fromJson instanceof ROC){
+            if (fromJson instanceof ROC) {
                 //Shouldn't have probAndLabel, but should have stored AUC and AUPRC
                 assertNull(((ROC) fromJson).getProbAndLabel());
                 assertTrue(((ROC) fromJson).calculateAUC() > 0.0);
                 assertTrue(((ROC) fromJson).calculateAUCPR() > 0.0);
 
-                assertEquals(((ROC)e).getRocCurve(), ((ROC) fromJson).getRocCurve());
-                assertEquals(((ROC)e).getPrecisionRecallCurve(), ((ROC) fromJson).getPrecisionRecallCurve());
-            } else if(e instanceof ROCBinary){
+                assertEquals(((ROC) e).getRocCurve(), ((ROC) fromJson).getRocCurve());
+                assertEquals(((ROC) e).getPrecisionRecallCurve(), ((ROC) fromJson).getPrecisionRecallCurve());
+            } else if (e instanceof ROCBinary) {
                 ROC[] rocs = ((ROCBinary) fromJson).getUnderlying();
-                ROC[] origRocs = ((ROCBinary)e).getUnderlying();
-//                for(ROC r : rocs ){
-                for( int i=0; i<origRocs.length; i++ ){
+                ROC[] origRocs = ((ROCBinary) e).getUnderlying();
+                //                for(ROC r : rocs ){
+                for (int i = 0; i < origRocs.length; i++) {
                     ROC r = rocs[i];
                     ROC origR = origRocs[i];
                     //Shouldn't have probAndLabel, but should have stored AUC and AUPRC, AND stored curves
@@ -159,10 +147,10 @@ public class EvalJsonTest {
                     assertEquals(origR.getPrecisionRecallCurve(), origR.getPrecisionRecallCurve());
                 }
 
-            } else if(e instanceof ROCMultiClass){
+            } else if (e instanceof ROCMultiClass) {
                 ROC[] rocs = ((ROCMultiClass) fromJson).getUnderlying();
-                ROC[] origRocs = ((ROCMultiClass)e).getUnderlying();
-                for( int i=0; i<origRocs.length; i++ ){
+                ROC[] origRocs = ((ROCMultiClass) e).getUnderlying();
+                for (int i = 0; i < origRocs.length; i++) {
                     ROC r = rocs[i];
                     ROC origR = origRocs[i];
                     //Shouldn't have probAndLabel, but should have stored AUC and AUPRC, AND stored curves
@@ -177,10 +165,11 @@ public class EvalJsonTest {
     }
 
     @Test
-    public void testJsonYamlCurves(){
-        ROC roc =  new ROC(0);
+    public void testJsonYamlCurves() {
+        ROC roc = new ROC(0);
 
-        INDArray evalLabel = Nd4j.getExecutioner().exec(new BernoulliDistribution(Nd4j.createUninitialized(100,1), 0.5));
+        INDArray evalLabel =
+                        Nd4j.getExecutioner().exec(new BernoulliDistribution(Nd4j.createUninitialized(100, 1), 0.5));
         INDArray evalProb = Nd4j.rand(100, 1);
         roc.eval(evalLabel, evalProb);
 
@@ -196,11 +185,43 @@ public class EvalJsonTest {
         assertEquals(c, c2);
         assertEquals(prc, prc2);
 
-//        System.out.println(json1);
+        //        System.out.println(json1);
+
+        //Also test: histograms
+
+        EvaluationCalibration ec = new EvaluationCalibration();
+
+        evalLabel = Nd4j.create(10, 3);
+        for (int i = 0; i < 10; i++) {
+            evalLabel.putScalar(i, i % 3, 1.0);
+        }
+        evalProb = Nd4j.rand(10, 3);
+        evalProb.diviColumnVector(evalProb.sum(1));
+        ec.eval(evalLabel, evalProb);
+
+        Histogram[] histograms = new Histogram[]{
+                ec.getResidualPlotAllClasses(),
+                ec.getResidualPlot(0),
+                ec.getResidualPlot(1),
+                ec.getProbabilityHistogramAllClasses(),
+                ec.getProbabilityHistogram(0),
+                ec.getProbabilityHistogram(1)};
+
+        for(Histogram h : histograms){
+            String json = h.toJson();
+            String yaml = h.toYaml();
+
+            Histogram h2 = Histogram.fromJson(json);
+            Histogram h3 = Histogram.fromYaml(yaml);
+
+            assertEquals(h, h2);
+            assertEquals(h2, h3);
+        }
+
     }
 
     @Test
-    public void testJsonWithCustomThreshold(){
+    public void testJsonWithCustomThreshold() {
 
         //Evaluation - binary threshold
         Evaluation e = new Evaluation(0.25);
@@ -215,7 +236,7 @@ public class EvalJsonTest {
 
 
         //Evaluation: custom cost array
-        INDArray costArray = Nd4j.create(new double[]{1.0, 2.0, 3.0});
+        INDArray costArray = Nd4j.create(new double[] {1.0, 2.0, 3.0});
         Evaluation e2 = new Evaluation(costArray);
 
         json = e2.toJson();
@@ -230,7 +251,7 @@ public class EvalJsonTest {
 
 
         //EvaluationBinary - per-output binary threshold
-        INDArray threshold = Nd4j.create(new double[]{1.0, 0.5, 0.25});
+        INDArray threshold = Nd4j.create(new double[] {1.0, 0.5, 0.25});
         EvaluationBinary eb = new EvaluationBinary(threshold);
 
         json = eb.toJson();
