@@ -75,6 +75,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.Serializable;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * A ComputationGraph network is a neural network with arbitrary (directed acyclic graph) connection structure.
@@ -179,15 +180,41 @@ public class ComputationGraph implements Serializable, Model, NeuralNetwork {
         this.defaultConfiguration = configuration.getDefaultConfiguration();
     }
 
+    /**
+     * This method allows to set ETL field time, useful for performance tracking
+     * @param time
+     */
     public void setLastEtlTime(long time) {
         lastEtlTime.set(time);
     }
 
+    /**
+     * This method returns ETL time field value
+     * @return
+     */
     public long getLastEtlTime() {
         Long time = lastEtlTime.get();
         return time == null ? 0L : time;
     }
 
+    /**
+     * This method sets specified CacheMode for all layers within network
+     *
+     * @param mode
+     */
+    public void setCacheMode(CacheMode mode) {
+        if (mode == null)
+            mode = CacheMode.NONE;
+
+        for (Layer layer: layers) {
+            layer.setCacheMode(mode);
+        }
+    }
+
+    /**
+     * This method returns configuration of this ComputationGraph
+     * @return
+     */
     public ComputationGraphConfiguration getConfiguration() {
         return configuration;
     }
@@ -565,40 +592,40 @@ public class ComputationGraph implements Serializable, Model, NeuralNetwork {
      * or fit(MultiDataSet) methods
      */
     public void initGradientsView() {
-        if (!initCalled)
-            init();
+        try (MemoryWorkspace ws = Nd4j.getMemoryManager().scopeOutOfWorkspaces()) {
+            if (!initCalled)
+                init();
 
-        //Go through layers, and work out total number of parameters. Then allocate full parameters array
-        int numParams = 0;
-        int[] numParamsForVertex = new int[topologicalOrder.length];
-        int i = 0;
-        for (; i < configuration.getNetworkInputs().size(); i++) {
-            numParamsForVertex[i] = 0; //No parameters for input vertices
-        }
-        Map<String, org.deeplearning4j.nn.conf.graph.GraphVertex> configVertexMap = configuration.getVertices();
-        for (Map.Entry<String, org.deeplearning4j.nn.conf.graph.GraphVertex> nodeEntry : configVertexMap.entrySet()) {
-            org.deeplearning4j.nn.conf.graph.GraphVertex n = nodeEntry.getValue();
-            numParamsForVertex[i] = n.numParams(true);
-            numParams += numParamsForVertex[i];
-            i++;
-        }
-        flattenedGradients = Nd4j.create(1, numParams);
-
-        //Given the topological ordering: work out the subset of the gradient array used for each layer, and set it
-        int paramOffsetSoFar = 0;
-        i = 0;
-        for (int vertexIdx : topologicalOrder) {
-            int nParamsThisVertex = numParamsForVertex[vertexIdx];
-            if (nParamsThisVertex != 0) {
-                INDArray gradientView = flattenedGradients.get(NDArrayIndex.point(0),
-                                NDArrayIndex.interval(paramOffsetSoFar, paramOffsetSoFar + nParamsThisVertex));
-                vertices[vertexIdx].setBackpropGradientsViewArray(gradientView);
+            //Go through layers, and work out total number of parameters. Then allocate full parameters array
+            int numParams = 0;
+            int[] numParamsForVertex = new int[topologicalOrder.length];
+            int i = 0;
+            for (; i < configuration.getNetworkInputs().size(); i++) {
+                numParamsForVertex[i] = 0; //No parameters for input vertices
             }
-            i++;
-            paramOffsetSoFar += nParamsThisVertex;
+            Map<String, org.deeplearning4j.nn.conf.graph.GraphVertex> configVertexMap = configuration.getVertices();
+            for (Map.Entry<String, org.deeplearning4j.nn.conf.graph.GraphVertex> nodeEntry : configVertexMap.entrySet()) {
+                org.deeplearning4j.nn.conf.graph.GraphVertex n = nodeEntry.getValue();
+                numParamsForVertex[i] = n.numParams(true);
+                numParams += numParamsForVertex[i];
+                i++;
+            }
+            flattenedGradients = Nd4j.create(1, numParams);
+
+            //Given the topological ordering: work out the subset of the gradient array used for each layer, and set it
+            int paramOffsetSoFar = 0;
+            i = 0;
+            for (int vertexIdx : topologicalOrder) {
+                int nParamsThisVertex = numParamsForVertex[vertexIdx];
+                if (nParamsThisVertex != 0) {
+                    INDArray gradientView = flattenedGradients.get(NDArrayIndex.point(0),
+                            NDArrayIndex.interval(paramOffsetSoFar, paramOffsetSoFar + nParamsThisVertex));
+                    vertices[vertexIdx].setBackpropGradientsViewArray(gradientView);
+                }
+                i++;
+                paramOffsetSoFar += nParamsThisVertex;
+            }
         }
-
-
     }
 
     /**
@@ -621,8 +648,9 @@ public class ComputationGraph implements Serializable, Model, NeuralNetwork {
     public void pretrain(MultiDataSetIterator iter) {
         if (!configuration.isPretrain())
             return;
-        if (flattenedGradients == null)
+        if (flattenedGradients == null) {
             initGradientsView();
+        }
 
         //Assume here that all layers are pretrainable layers
         for (int i = 0; i < topologicalOrder.length; i++) {
@@ -661,8 +689,9 @@ public class ComputationGraph implements Serializable, Model, NeuralNetwork {
     public void pretrainLayer(String layerName, MultiDataSetIterator iter) {
         if (!configuration.isPretrain())
             return;
-        if (flattenedGradients == null)
+        if (flattenedGradients == null) {
             initGradientsView();
+        }
 
         if (!verticesMap.containsKey(layerName)) {
             throw new IllegalStateException("Invalid vertex name: " + layerName);
@@ -783,8 +812,9 @@ public class ComputationGraph implements Serializable, Model, NeuralNetwork {
      * Note that this method can only be used with ComputationGraphs with 1 input and 1 output
      */
     public void fit(DataSetIterator iterator) {
-        if (flattenedGradients == null)
+        if (flattenedGradients == null) {
             initGradientsView();
+        }
         if (numInputArrays != 1 || numOutputArrays != 1)
             throw new UnsupportedOperationException("Cannot train ComputationGraph network with "
                             + " multiple inputs or outputs using a DataSetIterator");
@@ -902,8 +932,9 @@ public class ComputationGraph implements Serializable, Model, NeuralNetwork {
      * Fit the ComputationGraph using a MultiDataSetIterator
      */
     public void fit(MultiDataSetIterator multi) {
-        if (flattenedGradients == null)
+        if (flattenedGradients == null) {
             initGradientsView();
+        }
 
         boolean destructable = false;
 
@@ -1041,8 +1072,9 @@ public class ComputationGraph implements Serializable, Model, NeuralNetwork {
      * @param labelMaskArrays   Mas arrays for the labels/outputs. Typically used for RNN training. May be null.
      */
     public void fit(INDArray[] inputs, INDArray[] labels, INDArray[] featureMaskArrays, INDArray[] labelMaskArrays) {
-        if (flattenedGradients == null)
+        if (flattenedGradients == null) {
             initGradientsView();
+        }
 
         setInputs(inputs);
         setLabels(labels);
@@ -1532,9 +1564,7 @@ public class ComputationGraph implements Serializable, Model, NeuralNetwork {
      */
     protected void calcBackpropGradients(boolean truncatedBPTT, INDArray... externalEpsilons) {
         if (flattenedGradients == null) {
-            try (MemoryWorkspace ws = Nd4j.getMemoryManager().scopeOutOfWorkspaces()) {
-                initGradientsView();
-            }
+            initGradientsView();
         }
 
 
@@ -2439,8 +2469,9 @@ public class ComputationGraph implements Serializable, Model, NeuralNetwork {
      */
     protected void doTruncatedBPTT(INDArray[] inputs, INDArray[] labels, INDArray[] featureMasks,
                     INDArray[] labelMasks) {
-        if (flattenedGradients == null)
+        if (flattenedGradients == null) {
             initGradientsView();
+        }
 
         //Approach used here to implement truncated BPTT: if input is 3d, split it. Otherwise: input is unmodified
 
@@ -2913,6 +2944,9 @@ public class ComputationGraph implements Serializable, Model, NeuralNetwork {
 
         DataSetIterator iter = iterator.asyncSupported() ? new AsyncDataSetIterator(iterator, 2, true) : iterator;
 
+        WorkspaceMode cMode = configuration.getTrainingWorkspaceMode();
+        configuration.setTrainingWorkspaceMode(configuration.getInferenceWorkspaceMode());
+
         MemoryWorkspace workspace =
                         configuration.getTrainingWorkspaceMode() == WorkspaceMode.NONE ? new DummyWorkspace()
                                         : Nd4j.getWorkspaceManager().getWorkspaceForCurrentThread(
@@ -2946,6 +2980,8 @@ public class ComputationGraph implements Serializable, Model, NeuralNetwork {
         if (iterator.asyncSupported())
             ((AsyncDataSetIterator) iter).shutdown();
 
+        configuration.setTrainingWorkspaceMode(cMode);
+
         return evaluations;
     }
 
@@ -2972,11 +3008,13 @@ public class ComputationGraph implements Serializable, Model, NeuralNetwork {
         MultiDataSetIterator iter =
                         iterator.asyncSupported() ? new AsyncMultiDataSetIterator(iterator, 2, true) : iterator;
 
+        WorkspaceMode cMode = configuration.getTrainingWorkspaceMode();
+        configuration.setTrainingWorkspaceMode(configuration.getInferenceWorkspaceMode());
+
         MemoryWorkspace workspace =
                         configuration.getTrainingWorkspaceMode() == WorkspaceMode.NONE ? new DummyWorkspace()
                                         : Nd4j.getWorkspaceManager().getWorkspaceForCurrentThread(
                                                         workspaceConfigurationExternal, workspaceExternal);
-
 
         while (iter.hasNext()) {
             MultiDataSet next = iter.next();
@@ -3007,6 +3045,8 @@ public class ComputationGraph implements Serializable, Model, NeuralNetwork {
 
         if (iterator.asyncSupported())
             ((AsyncMultiDataSetIterator) iter).shutdown();
+
+        configuration.setTrainingWorkspaceMode(cMode);
 
         return evaluations;
     }

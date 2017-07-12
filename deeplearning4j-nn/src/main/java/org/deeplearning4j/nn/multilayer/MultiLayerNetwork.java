@@ -145,6 +145,20 @@ public class MultiLayerNetwork implements Serializable, Classifier, Layer, Neura
         this.defaultConfiguration = conf.getConf(0).clone();
     }
 
+    /**
+     * This method sets specified CacheMode for all layers within network
+     *
+     * @param mode
+     */
+    public void setCacheMode(CacheMode mode) {
+        if (mode == null)
+            mode = CacheMode.NONE;
+
+        for (Layer layer: layers) {
+            layer.setCacheMode(mode);
+        }
+    }
+
     public void setLastEtlTime(long time) {
         lastEtlTime.set(time);
     }
@@ -202,8 +216,9 @@ public class MultiLayerNetwork implements Serializable, Classifier, Layer, Neura
      * @param iter Training data
      */
     public void pretrain(DataSetIterator iter) {
-        if (flattenedGradients == null)
+        if (flattenedGradients == null) {
             initGradientsView();
+        }
         if (!layerWiseConfigurations.isPretrain())
             return;
 
@@ -220,8 +235,9 @@ public class MultiLayerNetwork implements Serializable, Classifier, Layer, Neura
      * @param iter Training data
      */
     public void pretrainLayer(int layerIdx, DataSetIterator iter) {
-        if (flattenedGradients == null)
+        if (flattenedGradients == null) {
             initGradientsView();
+        }
         if (!layerWiseConfigurations.isPretrain())
             return;
         if (layerIdx >= layers.length) {
@@ -253,8 +269,9 @@ public class MultiLayerNetwork implements Serializable, Classifier, Layer, Neura
      * @param features Training data array
      */
     public void pretrainLayer(int layerIdx, INDArray features) {
-        if (flattenedGradients == null)
+        if (flattenedGradients == null) {
             initGradientsView();
+        }
         if (!layerWiseConfigurations.isPretrain())
             return;
         if (layerIdx >= layers.length) {
@@ -291,8 +308,9 @@ public class MultiLayerNetwork implements Serializable, Classifier, Layer, Neura
     public void pretrain(INDArray input) {
         if (!layerWiseConfigurations.isPretrain())
             return;
-        if (flattenedGradients == null)
+        if (flattenedGradients == null) {
             initGradientsView();
+        }
 
         /* During pretrain, feed forward expected activations of network, use activation cooccurrences during pretrain  */
 
@@ -564,30 +582,32 @@ public class MultiLayerNetwork implements Serializable, Classifier, Layer, Neura
      * As a general rule, this shouldn't ever need to be called manually when doing training via fit(DataSet) or fit(DataSetIterator)
      */
     public void initGradientsView() {
-        if (layers == null)
-            init();
+        try (MemoryWorkspace ws = Nd4j.getMemoryManager().scopeOutOfWorkspaces()) {
+            if (layers == null)
+                init();
 
-        int nLayers = layers.length;
+            int nLayers = layers.length;
 
-        //First: Work out total length of (backprop) params
-        int backpropParamLength = 0;
-        int[] nParamsPerLayer = new int[nLayers];
-        for (int i = 0; i < nLayers; i++) {
-            NeuralNetConfiguration conf = layerWiseConfigurations.getConf(i);
-            nParamsPerLayer[i] = layers[i].conf().getLayer().initializer().numParams(conf);
-            backpropParamLength += nParamsPerLayer[i];
-        }
+            //First: Work out total length of (backprop) params
+            int backpropParamLength = 0;
+            int[] nParamsPerLayer = new int[nLayers];
+            for (int i = 0; i < nLayers; i++) {
+                NeuralNetConfiguration conf = layerWiseConfigurations.getConf(i);
+                nParamsPerLayer[i] = layers[i].conf().getLayer().initializer().numParams(conf);
+                backpropParamLength += nParamsPerLayer[i];
+            }
 
-        flattenedGradients = Nd4j.zeros(new int[] {1, backpropParamLength}, 'f'); //No need to initialize, as each layer will do it each iteration anyway
+            flattenedGradients = Nd4j.zeros(new int[] {1, backpropParamLength}, 'f'); //No need to initialize, as each layer will do it each iteration anyway
 
-        int backpropParamsSoFar = 0;
-        for (int i = 0; i < layers.length; i++) {
-            if (nParamsPerLayer[i] == 0)
-                continue; //This layer doesn't have any parameters...
-            INDArray thisLayerGradView = flattenedGradients.get(NDArrayIndex.point(0),
-                            NDArrayIndex.interval(backpropParamsSoFar, backpropParamsSoFar + nParamsPerLayer[i]));
-            layers[i].setBackpropGradientsViewArray(thisLayerGradView);
-            backpropParamsSoFar += nParamsPerLayer[i];
+            int backpropParamsSoFar = 0;
+            for (int i = 0; i < layers.length; i++) {
+                if (nParamsPerLayer[i] == 0)
+                    continue; //This layer doesn't have any parameters...
+                INDArray thisLayerGradView = flattenedGradients.get(NDArrayIndex.point(0),
+                        NDArrayIndex.interval(backpropParamsSoFar, backpropParamsSoFar + nParamsPerLayer[i]));
+                layers[i].setBackpropGradientsViewArray(thisLayerGradView);
+                backpropParamsSoFar += nParamsPerLayer[i];
+            }
         }
     }
 
@@ -804,8 +824,8 @@ public class MultiLayerNetwork implements Serializable, Classifier, Layer, Neura
      * @return list of activations.
      */
     public List<INDArray> feedForwardToLayer(int layerNum, boolean train) {
-        INDArray currInput = layerWiseConfigurations.getTrainingWorkspaceMode() == WorkspaceMode.NONE ? input
-                        : input.migrate();
+        // TODO: maybe remove that?
+        INDArray currInput = layerWiseConfigurations.getTrainingWorkspaceMode() == WorkspaceMode.NONE || !input.isAttached() ? input : input.migrate();
         List<INDArray> activations = new ArrayList<>();
         activations.add(currInput);
 
@@ -1177,9 +1197,7 @@ public class MultiLayerNetwork implements Serializable, Classifier, Layer, Neura
      */
     protected Pair<Gradient, INDArray> calcBackpropGradients(INDArray epsilon, boolean withOutputLayer) {
         if (flattenedGradients == null) {
-            try (MemoryWorkspace ws = Nd4j.getMemoryManager().scopeOutOfWorkspaces()) {
-                initGradientsView();
-            }
+            initGradientsView();
         }
         String multiGradientKey;
         Gradient gradient = new DefaultGradient(flattenedGradients);
@@ -1389,10 +1407,11 @@ public class MultiLayerNetwork implements Serializable, Classifier, Layer, Neura
 
     /** Equivalent to backprop(), but calculates gradient for truncated BPTT instead. */
     protected void truncatedBPTTGradient() {
-        if (flattenedGradients == null)
+        if (flattenedGradients == null) {
             initGradientsView();
+        }
         String multiGradientKey;
-        gradient = new DefaultGradient();
+        gradient = new DefaultGradient(flattenedGradients);
         Layer currLayer;
 
         if (!(getOutputLayer() instanceof IOutputLayer)) {
@@ -1540,8 +1559,9 @@ public class MultiLayerNetwork implements Serializable, Classifier, Layer, Neura
             log.warn("Output layer not instance of output layer returning.");
             return;
         }
-        if (flattenedGradients == null)
+        if (flattenedGradients == null) {
             initGradientsView();
+        }
 
         if (labels == null)
             throw new IllegalStateException("No labels found");
@@ -2753,6 +2773,9 @@ public class MultiLayerNetwork implements Serializable, Classifier, Layer, Neura
 
         DataSetIterator iter = iterator.asyncSupported() ? new AsyncDataSetIterator(iterator, 2, true) : iterator;
 
+        WorkspaceMode cMode = layerWiseConfigurations.getTrainingWorkspaceMode();
+        layerWiseConfigurations.setTrainingWorkspaceMode(layerWiseConfigurations.getInferenceWorkspaceMode());
+
         MemoryWorkspace workspace =
                         layerWiseConfigurations.getTrainingWorkspaceMode() == WorkspaceMode.NONE ? new DummyWorkspace()
                                         : Nd4j.getWorkspaceManager().getWorkspaceForCurrentThread(
@@ -2789,6 +2812,8 @@ public class MultiLayerNetwork implements Serializable, Classifier, Layer, Neura
 
         if (iterator.asyncSupported())
             ((AsyncDataSetIterator) iter).shutdown();
+
+        layerWiseConfigurations.setTrainingWorkspaceMode(cMode);
 
         return evaluations;
     }
@@ -2839,8 +2864,7 @@ public class MultiLayerNetwork implements Serializable, Classifier, Layer, Neura
 
     @Override
     public <T extends IEvaluation> T[] doEvaluation(MultiDataSetIterator iterator, T[] evaluations) {
-        throw new DL4JInvalidInputException(
-                        "MultiLayerNetwork can't handle MultiDataSet. Please consider use of ComputationGraph");
+        return doEvaluation(new MultiDataSetWrapperIterator(iterator), evaluations);
     }
 
     /**

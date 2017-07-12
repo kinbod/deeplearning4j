@@ -28,6 +28,7 @@ import org.datavec.api.records.metadata.RecordMetaData;
 import org.datavec.api.records.metadata.RecordMetaDataComposableMap;
 import org.datavec.api.records.reader.RecordReader;
 import org.datavec.api.records.reader.SequenceRecordReader;
+import org.datavec.api.util.ndarray.RecordConverter;
 import org.datavec.api.writable.NDArrayWritable;
 import org.datavec.api.writable.Writable;
 import org.deeplearning4j.berkeley.Pair;
@@ -78,6 +79,9 @@ public class RecordReaderMultiDataSetIterator implements MultiDataSetIterator {
     @Setter
     private boolean collectMetaData = false;
 
+    private boolean timeSeriesRandomOffset = false;
+    private Random timeSeriesRandomOffsetRng;
+
     private MultiDataSetPreProcessor preProcessor;
 
     private RecordReaderMultiDataSetIterator(Builder builder) {
@@ -87,6 +91,10 @@ public class RecordReaderMultiDataSetIterator implements MultiDataSetIterator {
         this.sequenceRecordReaders = builder.sequenceRecordReaders;
         this.inputs.addAll(builder.inputs);
         this.outputs.addAll(builder.outputs);
+        this.timeSeriesRandomOffset = builder.timeSeriesRandomOffset;
+        if(this.timeSeriesRandomOffset){
+            timeSeriesRandomOffsetRng = new Random(builder.timeSeriesRandomOffsetSeed);
+        }
     }
 
     @Override
@@ -201,7 +209,7 @@ public class RecordReaderMultiDataSetIterator implements MultiDataSetIterator {
         //In order to align data at the end (for each example individually), we need to know the length of the
         // longest time series for each example
         int[] longestSequence = null;
-        if (alignmentMode == AlignmentMode.ALIGN_END) {
+        if (timeSeriesRandomOffset || alignmentMode == AlignmentMode.ALIGN_END) {
             longestSequence = new int[minExamples];
             for (Map.Entry<String, List<List<List<Writable>>>> entry : nextSeqRRVals.entrySet()) {
                 List<List<List<Writable>>> list = entry.getValue();
@@ -222,15 +230,16 @@ public class RecordReaderMultiDataSetIterator implements MultiDataSetIterator {
                 }
             }
         }
+        long rngSeed = (timeSeriesRandomOffset ? timeSeriesRandomOffsetRng.nextLong() : -1);
         Pair<INDArray[], INDArray[]> features = convertFeaturesOrLabels(new INDArray[inputs.size()],
                         new INDArray[inputs.size()], inputs, minExamples, nextRRVals, nextRRValsBatched, nextSeqRRVals,
-                        longestTS, longestSequence);
+                        longestTS, longestSequence, rngSeed);
 
 
         //Third: create the outputs/labels
         Pair<INDArray[], INDArray[]> labels = convertFeaturesOrLabels(new INDArray[outputs.size()],
                         new INDArray[outputs.size()], outputs, minExamples, nextRRVals, nextRRValsBatched,
-                        nextSeqRRVals, longestTS, longestSequence);
+                        nextSeqRRVals, longestTS, longestSequence, rngSeed);
 
 
 
@@ -247,9 +256,10 @@ public class RecordReaderMultiDataSetIterator implements MultiDataSetIterator {
     private Pair<INDArray[], INDArray[]> convertFeaturesOrLabels(INDArray[] featuresOrLabels, INDArray[] masks,
                     List<SubsetDetails> subsetDetails, int minExamples, Map<String, List<List<Writable>>> nextRRVals,
                     Map<String, List<Writable>> nextRRValsBatched,
-                    Map<String, List<List<List<Writable>>>> nextSeqRRVals, int longestTS, int[] longestSequence) {
+                    Map<String, List<List<List<Writable>>>> nextSeqRRVals, int longestTS, int[] longestSequence, long rngSeed) {
         boolean hasMasks = false;
         int i = 0;
+
         for (SubsetDetails d : subsetDetails) {
             if (nextRRValsBatched != null && nextRRValsBatched.containsKey(d.readerName)) {
                 //Standard reader, but batch ops
@@ -261,7 +271,7 @@ public class RecordReaderMultiDataSetIterator implements MultiDataSetIterator {
             } else {
                 //Sequence reader
                 List<List<List<Writable>>> list = nextSeqRRVals.get(d.readerName);
-                Pair<INDArray, INDArray> p = convertWritablesSequence(list, minExamples, longestTS, d, longestSequence);
+                Pair<INDArray, INDArray> p = convertWritablesSequence(list, minExamples, longestTS, d, longestSequence, rngSeed);
                 featuresOrLabels[i] = p.getFirst();
                 masks[i] = p.getSecond();
                 if (masks[i] != null)
@@ -272,7 +282,6 @@ public class RecordReaderMultiDataSetIterator implements MultiDataSetIterator {
 
         return new Pair<>(featuresOrLabels, hasMasks ? masks : null);
     }
-
 
     private INDArray convertWritablesBatched(List<Writable> list, SubsetDetails details) {
         INDArray arr;
@@ -313,6 +322,31 @@ public class RecordReaderMultiDataSetIterator implements MultiDataSetIterator {
         return out;
     }
 
+    private int countLength(List<Writable> list){
+        return countLength(list, 0, list.size()-1);
+    }
+
+    private int countLength(List<Writable> list, int from, int to){
+        int length = 0;
+        for( int i=from; i<=to; i++ ) {
+            Writable w = list.get(i);
+            if (w instanceof NDArrayWritable) {
+                INDArray a = ((NDArrayWritable) w).get();
+                if (!a.isRowVector()) {
+                    throw new UnsupportedOperationException("Multiple writables present but NDArrayWritable is "
+                            + "not a row vector. Can only concat row vectors with other writables. Shape: "
+                            + Arrays.toString(a.shape()));
+                }
+                length += a.length();
+            } else {
+                //Assume all others are single value
+                length++;
+            }
+        }
+
+        return length;
+    }
+
     private INDArray convertWritables(List<List<Writable>> list, int minValues, SubsetDetails details) {
         INDArray arr;
         if (details.entireReader) {
@@ -323,7 +357,7 @@ public class RecordReaderMultiDataSetIterator implements MultiDataSetIterator {
                 shape[0] = minValues;
                 arr = Nd4j.create(shape);
             } else {
-                arr = Nd4j.create(minValues, list.get(0).size());
+                arr = Nd4j.create(minValues, countLength(list.get(0)));
             }
         } else if (details.oneHot) {
             arr = Nd4j.zeros(minValues, details.oneHotNumClasses);
@@ -337,24 +371,7 @@ public class RecordReaderMultiDataSetIterator implements MultiDataSetIterator {
                 arr = Nd4j.create(shape);
             } else {
                 //Need to check for multiple NDArrayWritables, or mixed NDArrayWritable + DoubleWritable etc
-
-                int length = 0;
-                for (int i = details.subsetStart; i <= details.subsetEndInclusive; i++) {
-                    Writable w = list.get(0).get(i);
-                    if (w instanceof NDArrayWritable) {
-                        INDArray a = ((NDArrayWritable) w).get();
-                        if (!a.isRowVector()) {
-                            throw new UnsupportedOperationException("Multiple writables present but NDArrayWritable is "
-                                            + "not a row vector. Can only concat row vectors with other writables. Shape: "
-                                            + Arrays.toString(a.shape()));
-                        }
-                        length += a.length();
-                    } else {
-                        //Assume all others are single value
-                        length++;
-                    }
-                }
-
+                int length = countLength(list.get(0), details.subsetStart, details.subsetEndInclusive);
                 arr = Nd4j.create(minValues, length);
             }
         }
@@ -363,20 +380,8 @@ public class RecordReaderMultiDataSetIterator implements MultiDataSetIterator {
             List<Writable> c = list.get(i);
             if (details.entireReader) {
                 //Convert entire reader contents, without modification
-                int j = 0;
-                for (Writable w : c) {
-                    try {
-                        arr.putScalar(i, j, w.toDouble());
-                    } catch (UnsupportedOperationException e) {
-                        // This isn't a scalar, so check if we got an array already
-                        if (w instanceof NDArrayWritable) {
-                            putExample(arr, ((NDArrayWritable) w).get(), i);
-                        } else {
-                            throw e;
-                        }
-                    }
-                    j++;
-                }
+                INDArray converted = RecordConverter.toArray(c);
+                putExample(arr, converted, i);
             } else if (details.oneHot) {
                 //Convert a single column to a one-hot representation
                 Writable w = c.get(details.subsetStart);
@@ -442,7 +447,7 @@ public class RecordReaderMultiDataSetIterator implements MultiDataSetIterator {
      * Convert the writables to a sequence (3d) data set, and also return the mask array (if necessary)
      */
     private Pair<INDArray, INDArray> convertWritablesSequence(List<List<List<Writable>>> list, int minValues,
-                    int maxTSLength, SubsetDetails details, int[] longestSequence) {
+                    int maxTSLength, SubsetDetails details, int[] longestSequence, long rngSeed) {
         if (maxTSLength == -1)
             maxTSLength = list.get(0).size();
         INDArray arr;
@@ -497,6 +502,12 @@ public class RecordReaderMultiDataSetIterator implements MultiDataSetIterator {
             maskArray = null;
         }
 
+        //Don't use the global RNG as we need repeatability for each subset (i.e., features and labels must be aligned)
+        Random rng = null;
+        if(timeSeriesRandomOffset){
+            rng = new Random(rngSeed);
+        }
+
         for (int i = 0; i < minValues; i++) {
             List<List<Writable>> sequence = list.get(i);
 
@@ -508,6 +519,11 @@ public class RecordReaderMultiDataSetIterator implements MultiDataSetIterator {
                 //Align end
                 //Only practical differences here are: (a) offset, and (b) masking
                 startOffset = longestSequence[i] - sequence.size();
+            }
+
+            if(timeSeriesRandomOffset){
+                int maxPossible = maxTSLength - sequence.size() + 1;
+                startOffset = rng.nextInt(maxPossible);
             }
 
             int t = 0;
@@ -571,21 +587,21 @@ public class RecordReaderMultiDataSetIterator implements MultiDataSetIterator {
             //For any remaining time steps: set mask array to 0 (just padding)
             if (needMaskArray) {
                 //Masking array entries at start (for align end)
-                if (alignmentMode == AlignmentMode.ALIGN_END) {
+                if (timeSeriesRandomOffset || alignmentMode == AlignmentMode.ALIGN_END) {
                     for (int t2 = 0; t2 < startOffset; t2++) {
                         maskArray.putScalar(i, t2, 0.0);
                     }
                 }
 
                 //Masking array entries at end (for align start)
-                if (alignmentMode == AlignmentMode.ALIGN_START) {
-                    for (int t2 = t; t2 < maxTSLength; t2++) {
+                if (timeSeriesRandomOffset || alignmentMode == AlignmentMode.ALIGN_START) {
+                    int lastStep = startOffset + sequence.size();
+                    for (int t2 = lastStep; t2 < maxTSLength; t2++) {
                         maskArray.putScalar(i, t2, 0.0);
                     }
                 }
             }
         }
-
 
         return new Pair<>(arr, maskArray);
     }
@@ -639,6 +655,9 @@ public class RecordReaderMultiDataSetIterator implements MultiDataSetIterator {
 
         private List<SubsetDetails> inputs = new ArrayList<>();
         private List<SubsetDetails> outputs = new ArrayList<>();
+
+        private boolean timeSeriesRandomOffset = false;
+        private long timeSeriesRandomOffsetSeed = System.currentTimeMillis();
 
         /**
          * @param batchSize The batch size for the RecordReaderMultiDataSetIterator
@@ -742,6 +761,20 @@ public class RecordReaderMultiDataSetIterator implements MultiDataSetIterator {
          */
         public Builder addOutputOneHot(String readerName, int column, int numClasses) {
             outputs.add(new SubsetDetails(readerName, false, true, numClasses, column, -1));
+            return this;
+        }
+
+        /**
+		 * For use with timeseries trained with tbptt
+  		 * In a given minbatch, shorter time series are padded and appropriately masked to be the same length as the longest time series.
+		 * Cases with a skewed distrbution of lengths can result in the last few updates from the time series coming from mostly masked time steps.
+         * timeSeriesRandomOffset randomly offsettsthe time series + masking appropriately to address this
+         * @param timeSeriesRandomOffset, "true" to randomly offset time series within a minibatch
+         * @param rngSeed seed for reproducibility
+         */
+        public Builder timeSeriesRandomOffset(boolean timeSeriesRandomOffset, long rngSeed){
+            this.timeSeriesRandomOffset = timeSeriesRandomOffset;
+            this.timeSeriesRandomOffsetSeed = rngSeed;
             return this;
         }
 
