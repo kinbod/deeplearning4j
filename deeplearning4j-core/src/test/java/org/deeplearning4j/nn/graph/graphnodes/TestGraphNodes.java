@@ -1,10 +1,16 @@
 package org.deeplearning4j.nn.graph.graphnodes;
 
-import org.deeplearning4j.berkeley.Pair;
+import org.deeplearning4j.nn.conf.WorkspaceMode;
+import org.deeplearning4j.nn.conf.inputs.InputType;
+import org.deeplearning4j.nn.conf.layers.GravesLSTM;
+import org.deeplearning4j.nn.conf.layers.RnnOutputLayer;
+import org.deeplearning4j.nn.transferlearning.TransferLearning;
+import org.deeplearning4j.nn.weights.WeightInit;
+import org.nd4j.linalg.learning.config.AdaDelta;
+import org.nd4j.linalg.primitives.Pair;
 import org.deeplearning4j.nn.api.MaskState;
 import org.deeplearning4j.nn.conf.ComputationGraphConfiguration;
 import org.deeplearning4j.nn.conf.NeuralNetConfiguration;
-import org.deeplearning4j.nn.conf.graph.*;
 import org.deeplearning4j.nn.conf.graph.ElementWiseVertex;
 import org.deeplearning4j.nn.conf.graph.PreprocessorVertex;
 import org.deeplearning4j.nn.conf.graph.rnn.DuplicateToTimeSeriesVertex;
@@ -16,29 +22,21 @@ import org.deeplearning4j.nn.gradient.Gradient;
 import org.deeplearning4j.nn.graph.ComputationGraph;
 import org.deeplearning4j.nn.graph.vertex.GraphVertex;
 import org.deeplearning4j.nn.graph.vertex.impl.*;
-import org.deeplearning4j.nn.graph.vertex.impl.L2Vertex;
-import org.deeplearning4j.nn.graph.vertex.impl.MergeVertex;
-import org.deeplearning4j.nn.graph.vertex.impl.ReshapeVertex;
-import org.deeplearning4j.nn.graph.vertex.impl.StackVertex;
-import org.deeplearning4j.nn.graph.vertex.impl.SubsetVertex;
-import org.deeplearning4j.nn.graph.vertex.impl.UnstackVertex;
 import org.junit.Test;
 import org.nd4j.linalg.activations.Activation;
 import org.nd4j.linalg.api.ndarray.INDArray;
-import org.nd4j.linalg.api.ops.impl.accum.distances.EuclideanDistance;
-import org.nd4j.linalg.api.ops.impl.transforms.Pow;
-import org.nd4j.linalg.dataset.DataSet;
 import org.nd4j.linalg.dataset.api.MultiDataSet;
 import org.nd4j.linalg.factory.Nd4j;
 import org.nd4j.linalg.indexing.INDArrayIndex;
 import org.nd4j.linalg.indexing.NDArrayIndex;
 import org.nd4j.linalg.lossfunctions.LossFunctions;
-import org.nd4j.linalg.ops.transforms.Transforms;
 
 import java.util.Arrays;
+import java.util.Map;
 
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
 
 public class TestGraphNodes {
 
@@ -503,7 +501,7 @@ public class TestGraphNodes {
     @Test
     public void testReshapeNode() {
         Nd4j.getRandom().setSeed(12345);
-        GraphVertex reshapeVertex = new ReshapeVertex(null, "", -1, new int[] {-1, 736});
+        GraphVertex reshapeVertex = new ReshapeVertex(null, "", -1, 'c', new int[] {-1, 736}, null);
 
         int[] inputShape = new int[] {1, 1, 1, 736};
         INDArray input = Nd4j.create(inputShape);
@@ -538,5 +536,57 @@ public class TestGraphNodes {
         String json = conf.toJson();
         ComputationGraphConfiguration conf2 = ComputationGraphConfiguration.fromJson(json);
         assertEquals(conf, conf2);
+    }
+
+
+    @Test
+    public void testLastTimeStepWithTransfer(){
+        int lstmLayerSize = 16;
+        int numLabelClasses = 10;
+        int numInputs = 5;
+
+        ComputationGraphConfiguration conf = new NeuralNetConfiguration.Builder()
+                .trainingWorkspaceMode(WorkspaceMode.NONE)
+                .inferenceWorkspaceMode(WorkspaceMode.NONE)
+                .seed(123)    //Random number generator seed for improved repeatability. Optional.
+                .updater(new AdaDelta())
+                .weightInit(WeightInit.XAVIER)
+                .graphBuilder()
+                .addInputs("rr")
+                .setInputTypes(InputType.recurrent(30))
+                .addLayer("1", new GravesLSTM.Builder().activation(Activation.TANH).nIn(numInputs).nOut(lstmLayerSize).dropOut(0.9).build(), "rr")
+                .addLayer("2", new RnnOutputLayer.Builder(LossFunctions.LossFunction.MCXENT)
+                        .activation(Activation.SOFTMAX).nOut(numLabelClasses).build(), "1")
+                .pretrain(false).backprop(true)
+                .setOutputs("2")
+                .build();
+
+
+        ComputationGraph net = new ComputationGraph(conf);
+        net.init();
+
+        ComputationGraph updatedModel = new TransferLearning.GraphBuilder(net)
+                .addVertex("laststepoutput", new LastTimeStepVertex("rr"), "2")
+                .setOutputs("laststepoutput")
+                .build();
+
+
+        INDArray input = Nd4j.rand(new int[]{10, numInputs, 16});
+
+        INDArray[] out = updatedModel.output(input);
+
+        assertNotNull(out);
+        assertEquals(1, out.length);
+        assertNotNull(out[0]);
+
+        assertArrayEquals(new int[]{10, numLabelClasses}, out[0].shape());
+
+        Map<String,INDArray> acts = updatedModel.feedForward(input, false);
+
+        assertEquals(4, acts.size());   //2 layers + input + vertex output
+        assertNotNull(acts.get("laststepoutput"));
+        assertArrayEquals(new int[]{10, numLabelClasses}, acts.get("laststepoutput").shape());
+
+        String toString = out[0].toString();
     }
 }

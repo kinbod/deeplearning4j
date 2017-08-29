@@ -3,10 +3,10 @@ package org.deeplearning4j.nn.modelimport.keras.layers.custom;
 import lombok.extern.slf4j.Slf4j;
 import org.deeplearning4j.nn.conf.inputs.InputType;
 import org.deeplearning4j.nn.conf.layers.LocalResponseNormalization;
-import org.deeplearning4j.nn.conf.layers.SubsamplingLayer;
-import org.deeplearning4j.nn.modelimport.keras.InvalidKerasConfigurationException;
+import org.deeplearning4j.nn.modelimport.keras.exceptions.InvalidKerasConfigurationException;
 import org.deeplearning4j.nn.modelimport.keras.KerasLayer;
-import org.deeplearning4j.nn.modelimport.keras.UnsupportedKerasConfigurationException;
+import org.deeplearning4j.nn.modelimport.keras.exceptions.UnsupportedKerasConfigurationException;
+import org.deeplearning4j.nn.modelimport.keras.utils.KerasLayerUtils;
 
 import java.util.Map;
 
@@ -44,7 +44,7 @@ public class KerasLRN extends KerasLayer {
     public KerasLRN(Map<String, Object> layerConfig, boolean enforceTrainingConfig)
                     throws InvalidKerasConfigurationException, UnsupportedKerasConfigurationException {
         super(layerConfig, enforceTrainingConfig);
-        Map<String, Object> lrnParams = getInnerLayerConfigFromConfig(layerConfig);
+        Map<String, Object> lrnParams = KerasLayerUtils.getInnerLayerConfigFromConfig(layerConfig, conf);
 
         LocalResponseNormalization.Builder builder = new LocalResponseNormalization.Builder().name(this.layerName)
                         .dropOut(this.dropout).alpha((double) lrnParams.get("alpha"))

@@ -1,15 +1,18 @@
 package org.deeplearning4j.nn.modelimport.keras.layers;
 
+import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.deeplearning4j.nn.conf.inputs.InputType;
 import org.deeplearning4j.nn.conf.layers.LossLayer;
-import org.deeplearning4j.nn.modelimport.keras.InvalidKerasConfigurationException;
+import org.deeplearning4j.nn.modelimport.keras.exceptions.InvalidKerasConfigurationException;
 import org.deeplearning4j.nn.modelimport.keras.KerasLayer;
-import org.deeplearning4j.nn.modelimport.keras.UnsupportedKerasConfigurationException;
+import org.deeplearning4j.nn.modelimport.keras.exceptions.UnsupportedKerasConfigurationException;
 import org.nd4j.linalg.lossfunctions.LossFunctions;
 
 import java.util.ArrayList;
 import java.util.Map;
+
+import static org.deeplearning4j.nn.modelimport.keras.utils.KerasLossUtils.mapLossFunction;
 
 /**
  * Builds a DL4J LossLayer from a Keras training loss function.
@@ -17,9 +20,10 @@ import java.util.Map;
  * @author dave@skymind.io
  */
 @Slf4j
+@Data
 public class KerasLoss extends KerasLayer {
 
-    public static final String KERAS_CLASS_NAME_LOSS = "Loss";
+    private final String KERAS_CLASS_NAME_LOSS = "Loss";
 
     /**
      * Constructor from layer name and input shape.
@@ -55,7 +59,7 @@ public class KerasLoss extends KerasLayer {
         this.inboundLayerNames.add(inboundLayerName);
         LossFunctions.LossFunction loss;
         try {
-            loss = mapLossFunction(kerasLoss);
+            loss = mapLossFunction(kerasLoss, conf);
         } catch (UnsupportedKerasConfigurationException e) {
             if (enforceTrainingConfig)
                 throw e;
@@ -65,9 +69,9 @@ public class KerasLoss extends KerasLayer {
         this.layer = new LossLayer.Builder(loss).name(layerName).build();
     }
 
-    private KerasLoss(Map<String, Object> layerConfig) {}
-
-    private KerasLoss(Map<String, Object> layerConfig, boolean enforceTrainingConfig) {}
+//    private KerasLoss(Map<String, Object> layerConfig) {}
+//
+//    private KerasLoss(Map<String, Object> layerConfig, boolean enforceTrainingConfig) {}
 
     /**
      * Get DL4J LossLayer.

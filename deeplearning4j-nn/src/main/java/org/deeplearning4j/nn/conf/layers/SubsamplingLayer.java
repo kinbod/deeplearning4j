@@ -1,8 +1,10 @@
 package org.deeplearning4j.nn.conf.layers;
 
-import lombok.*;
+import lombok.Data;
+import lombok.EqualsAndHashCode;
+import lombok.NoArgsConstructor;
+import lombok.ToString;
 import org.deeplearning4j.nn.api.ParamInitializer;
-import org.deeplearning4j.nn.conf.CacheMode;
 import org.deeplearning4j.nn.conf.ConvolutionMode;
 import org.deeplearning4j.nn.conf.InputPreProcessor;
 import org.deeplearning4j.nn.conf.NeuralNetConfiguration;
@@ -15,16 +17,12 @@ import org.deeplearning4j.util.ConvolutionUtils;
 import org.nd4j.linalg.api.ndarray.INDArray;
 
 import java.util.Collection;
-import java.util.HashMap;
 import java.util.Map;
 
 /**
  * Subsampling layer also referred to as pooling in convolution neural nets
  *
- *  Supports the following pooling types:
- *     MAX
- *     AVG
- *     NON
+ *  Supports the following pooling types: MAX, AVG, SUM, PNORM, NONE
  * @author Adam Gibson
  */
 
@@ -39,6 +37,7 @@ public class SubsamplingLayer extends Layer {
     protected int[] kernelSize; // Same as filter size from the last conv layer
     protected int[] stride; // Default is 2. Down-sample by a factor of 2
     protected int[] padding;
+    protected int[] dilation = new int[]{1,1};
     protected int pnorm;
     protected double eps;
 
@@ -62,7 +61,7 @@ public class SubsamplingLayer extends Layer {
         }
     }
 
-    protected SubsamplingLayer(BaseSubsamplingBuilder<?> builder) {
+    protected SubsamplingLayer(BaseSubsamplingBuilder builder) {
         super(builder);
         this.poolingType = builder.poolingType;
         if (builder.kernelSize.length != 2)
@@ -73,6 +72,9 @@ public class SubsamplingLayer extends Layer {
         this.stride = builder.stride;
         this.padding = builder.padding;
         this.convolutionMode = builder.convolutionMode;
+        if(builder instanceof Builder){
+            this.dilation = ((Builder)builder).dilation;
+        }
         this.pnorm = builder.pnorm;
         this.eps = builder.eps;
     }
@@ -117,7 +119,7 @@ public class SubsamplingLayer extends Layer {
                             + "\"): Expected CNN input, got " + inputType);
         }
 
-        return InputTypeUtil.getOutputTypeCnnLayers(inputType, kernelSize, stride, padding, convolutionMode,
+        return InputTypeUtil.getOutputTypeCnnLayers(inputType, kernelSize, stride, padding, dilation, convolutionMode,
                         ((InputType.InputTypeConvolutional) inputType).getDepth(), layerIndex, getLayerName(),
                         SubsamplingLayer.class);
     }
@@ -196,6 +198,9 @@ public class SubsamplingLayer extends Layer {
 
     @NoArgsConstructor
     public static class Builder extends BaseSubsamplingBuilder<Builder> {
+
+        private int[] dilation = new int[]{1,1};
+
         public Builder(PoolingType poolingType, int[] kernelSize, int[] stride) {
             super(poolingType, kernelSize, stride);
         }
@@ -270,6 +275,24 @@ public class SubsamplingLayer extends Layer {
             if (padding.length != 2)
                 throw new IllegalArgumentException("Invalid input: must be length 2");
             this.padding = padding;
+            return this;
+        }
+
+        /**
+         * Kernel dilation. Default: {1, 1}, which is standard convolutions. Used for implementing dilated convolutions,
+         * which are also known as atrous convolutions.<br>
+         * NOTE: Kernel dilation is less common in practice for subsampling layers, compared to convolutional layers.
+         *
+         * For more details, see:
+         * <a href="https://arxiv.org/abs/1511.07122">Yu and Koltun (2014)</a> and
+         * <a href="https://arxiv.org/abs/1412.7062">Chen et al. (2014)</a>, as well as
+         * <a href="http://deeplearning.net/software/theano/tutorial/conv_arithmetic.html#dilated-convolutions">
+         *     http://deeplearning.net/software/theano/tutorial/conv_arithmetic.html#dilated-convolutions</a><br>
+         *
+         * @param dilation Dilation for kernel
+         */
+        public Builder dilation(int... dilation){
+            this.dilation = dilation;
             return this;
         }
 

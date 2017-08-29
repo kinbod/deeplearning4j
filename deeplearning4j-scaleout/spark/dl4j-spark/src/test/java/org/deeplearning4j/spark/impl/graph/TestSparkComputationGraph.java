@@ -66,7 +66,7 @@ public class TestSparkComputationGraph extends BaseSparkTest {
 
         JavaSparkContext sc = this.sc;
 
-        RecordReader rr = new CSVRecordReader(0, ",");
+        RecordReader rr = new CSVRecordReader(0, ',');
         rr.initialize(new FileSplit(new ClassPathResource("iris.txt").getTempFileFromArchive()));
         MultiDataSetIterator iter = new RecordReaderMultiDataSetIterator.Builder(1).addReader("iris", rr)
                         .addInput("iris", 0, 3).addOutputOneHot("iris", 4, 3).build();
@@ -200,15 +200,15 @@ public class TestSparkComputationGraph extends BaseSparkTest {
                         .setOutputs("1").pretrain(false).backprop(true).build();
 
         Nd4j.getRandom().setSeed(12345);
-        ComputationGraph n1 = new ComputationGraph(conf);
+        ComputationGraph n1 = new ComputationGraph(conf.clone());
         n1.init();
 
         Nd4j.getRandom().setSeed(12345);
-        ComputationGraph n2 = new ComputationGraph(conf);
+        ComputationGraph n2 = new ComputationGraph(conf.clone());
         n2.init();
 
         Nd4j.getRandom().setSeed(12345);
-        ComputationGraph n3 = new ComputationGraph(conf);
+        ComputationGraph n3 = new ComputationGraph(conf.clone());
         n3.init();
 
         SparkComputationGraph sparkNet1 = new SparkComputationGraph(sc, n1,
@@ -339,7 +339,7 @@ public class TestSparkComputationGraph extends BaseSparkTest {
         JavaRDD<MultiDataSet> rdd = sc.parallelize(l);
         rdd = rdd.repartition(20);
 
-        IEvaluation[] es2 = scg.doEvaluationMDS(rdd, 5, new Evaluation(), new ROC());
+        IEvaluation[] es2 = scg.doEvaluationMDS(rdd, 5, new Evaluation(), new ROC(32));
         Evaluation e2 = (Evaluation) es2[0];
         ROC roc2 = (ROC) es2[1];
 
