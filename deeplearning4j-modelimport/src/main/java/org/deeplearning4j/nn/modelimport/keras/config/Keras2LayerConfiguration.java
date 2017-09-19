@@ -74,7 +74,7 @@ public class Keras2LayerConfiguration extends KerasLayerConfiguration {
     /* Pooling / Upsampling layer properties */
     private final String LAYER_FIELD_POOL_1D_SIZE = "pool_size";
     private final String LAYER_FIELD_POOL_1D_STRIDES = "strides";
-    private final String LAYER_FIELD_UPSAMPLING_SIZE = "size";
+    private final String LAYER_FIELD_UPSAMPLING_1D_SIZE = "size";
 
     /* Keras convolution border modes. */
     private final String LAYER_FIELD_BORDER_MODE = "padding";
@@ -87,8 +87,12 @@ public class Keras2LayerConfiguration extends KerasLayerConfiguration {
     private final String LAYER_FIELD_B_REGULARIZER = "bias_regularizer";
 
     /* Keras constraints */
+    private final String LAYER_FIELD_CONSTRAINT_NAME = "class_name";
     private final String LAYER_FIELD_W_CONSTRAINT = "kernel_constraint";
     private final String LAYER_FIELD_B_CONSTRAINT = "bias_constraint";
+    private final String LAYER_FIELD_MAX_CONSTRAINT = "max_value";
+    private final String LAYER_FIELD_MINMAX_MIN_CONSTRAINT = "min_value";
+    private final String LAYER_FIELD_MINMAX_MAX_CONSTRAINT = "max_value";
 
     /* Keras weight initializers. */
     private final String LAYER_FIELD_INIT = "kernel_initializer";

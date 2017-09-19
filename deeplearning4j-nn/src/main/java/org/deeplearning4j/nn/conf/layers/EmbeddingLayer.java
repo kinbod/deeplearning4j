@@ -1,6 +1,9 @@
 package org.deeplearning4j.nn.conf.layers;
 
-import lombok.*;
+import lombok.Data;
+import lombok.EqualsAndHashCode;
+import lombok.NoArgsConstructor;
+import lombok.ToString;
 import org.deeplearning4j.nn.api.Layer;
 import org.deeplearning4j.nn.api.ParamInitializer;
 import org.deeplearning4j.nn.conf.NeuralNetConfiguration;
@@ -31,13 +34,12 @@ import java.util.Map;
 @ToString(callSuper = true)
 @EqualsAndHashCode(callSuper = true)
 public class EmbeddingLayer extends FeedForwardLayer {
-
-    @Getter(AccessLevel.NONE)
     private boolean hasBias = true; //Default for pre-0.9.2 implementations
 
     private EmbeddingLayer(Builder builder) {
         super(builder);
         this.hasBias = builder.hasBias;
+        initializeConstraints(builder);
     }
 
     @Override

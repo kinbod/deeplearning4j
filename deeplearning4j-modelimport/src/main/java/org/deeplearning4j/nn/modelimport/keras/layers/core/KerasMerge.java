@@ -5,8 +5,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.deeplearning4j.nn.conf.graph.ElementWiseVertex;
 import org.deeplearning4j.nn.conf.graph.MergeVertex;
 import org.deeplearning4j.nn.conf.inputs.InputType;
-import org.deeplearning4j.nn.modelimport.keras.exceptions.InvalidKerasConfigurationException;
 import org.deeplearning4j.nn.modelimport.keras.KerasLayer;
+import org.deeplearning4j.nn.modelimport.keras.exceptions.InvalidKerasConfigurationException;
 import org.deeplearning4j.nn.modelimport.keras.exceptions.UnsupportedKerasConfigurationException;
 import org.deeplearning4j.nn.modelimport.keras.utils.KerasLayerUtils;
 
@@ -93,9 +93,13 @@ public class KerasMerge extends KerasLayer {
                 // leave null
                 break;
             case LAYER_MERGE_MODE_AVE:
+                op = ElementWiseVertex.Op.Average;
+                break;
+            case LAYER_MERGE_MODE_MAX:
+                op = ElementWiseVertex.Op.Max;
+                break;
             case LAYER_MERGE_MODE_COS:
             case LAYER_MERGE_MODE_DOT:
-            case LAYER_MERGE_MODE_MAX:
             default:
                 throw new UnsupportedKerasConfigurationException(
                                 "Keras Merge layer mode " + mergeMode + " not supported");

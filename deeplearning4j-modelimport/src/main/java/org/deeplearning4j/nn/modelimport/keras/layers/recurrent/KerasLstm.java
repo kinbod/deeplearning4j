@@ -2,31 +2,37 @@ package org.deeplearning4j.nn.modelimport.keras.layers.recurrent;
 
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
+import org.deeplearning4j.nn.api.layers.LayerConstraint;
+import org.deeplearning4j.nn.conf.InputPreProcessor;
+import org.deeplearning4j.nn.conf.distribution.Distribution;
 import org.deeplearning4j.nn.conf.inputs.InputType;
-import org.deeplearning4j.nn.conf.layers.GravesLSTM;
-import org.deeplearning4j.nn.modelimport.keras.exceptions.InvalidKerasConfigurationException;
+import org.deeplearning4j.nn.conf.layers.LSTM;
+import org.deeplearning4j.nn.conf.preprocessor.FeedForwardToRnnPreProcessor;
 import org.deeplearning4j.nn.modelimport.keras.KerasLayer;
+import org.deeplearning4j.nn.modelimport.keras.exceptions.InvalidKerasConfigurationException;
 import org.deeplearning4j.nn.modelimport.keras.exceptions.UnsupportedKerasConfigurationException;
+import org.deeplearning4j.nn.modelimport.keras.utils.KerasConstraintUtils;
 import org.deeplearning4j.nn.modelimport.keras.utils.KerasLayerUtils;
-import org.deeplearning4j.nn.params.GravesLSTMParamInitializer;
+import org.deeplearning4j.nn.params.LSTMParamInitializer;
 import org.deeplearning4j.nn.weights.WeightInit;
 import org.nd4j.linalg.activations.IActivation;
 import org.nd4j.linalg.api.ndarray.INDArray;
 import org.nd4j.linalg.factory.Nd4j;
 import org.nd4j.linalg.indexing.INDArrayIndex;
 import org.nd4j.linalg.indexing.NDArrayIndex;
+import org.nd4j.linalg.primitives.Pair;
 
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 
+import static org.deeplearning4j.nn.modelimport.keras.utils.KerasActivationUtils.getActivationFromConfig;
 import static org.deeplearning4j.nn.modelimport.keras.utils.KerasActivationUtils.mapActivation;
 import static org.deeplearning4j.nn.modelimport.keras.utils.KerasInitilizationUtils.getWeightInitFromConfig;
 import static org.deeplearning4j.nn.modelimport.keras.utils.KerasLayerUtils.getNOutFromConfig;
-import static org.deeplearning4j.nn.modelimport.keras.utils.KerasActivationUtils.getActivationFromConfig;
 
 /**
- * Imports a Keras LSTM layer as a DL4J GravesLSTM layer.
+ * Imports a Keras LSTM layer as a DL4J LSTM layer.
  *
  * @author dave@skymind.io
  */
@@ -94,11 +100,24 @@ public class KerasLstm extends KerasLayer {
     public KerasLstm(Map<String, Object> layerConfig, boolean enforceTrainingConfig)
                     throws InvalidKerasConfigurationException, UnsupportedKerasConfigurationException {
         super(layerConfig, enforceTrainingConfig);
-        WeightInit weightInit = getWeightInitFromConfig(layerConfig, conf.getLAYER_FIELD_INIT(),
+
+        Pair<WeightInit, Distribution> init = getWeightInitFromConfig(layerConfig, conf.getLAYER_FIELD_INIT(),
                 enforceTrainingConfig, conf, kerasMajorVersion);
-        WeightInit recurrentWeightInit = getWeightInitFromConfig(layerConfig, conf.getLAYER_FIELD_INNER_INIT(),
+        WeightInit weightInit = init.getFirst();
+        Distribution distribution = init.getSecond();
+
+        Pair<WeightInit, Distribution> recurrentInit = getWeightInitFromConfig(layerConfig, conf.getLAYER_FIELD_INNER_INIT(),
                 enforceTrainingConfig, conf, kerasMajorVersion);
-        if (weightInit != recurrentWeightInit)
+        WeightInit recurrentWeightInit = recurrentInit.getFirst();
+        Distribution recurrentDistribution = recurrentInit.getSecond();
+
+        Map<String, Object> innerConfig = KerasLayerUtils.getInnerLayerConfigFromConfig(layerConfig, conf);
+        Boolean returnSequences = (Boolean) innerConfig.get(conf.getLAYER_FIELD_RETURN_SEQUENCES());
+        if (!returnSequences) {
+            log.warn("Keras setting 'return_sequences = False' is not properly supported," +
+                    "DL4J's LSTM layer returns sequences by default");
+        }
+        if (weightInit != recurrentWeightInit || distribution != recurrentDistribution)
             if (enforceTrainingConfig)
                 throw new UnsupportedKerasConfigurationException(
                                 "Specifying different initialization for recurrent weights not supported.");
@@ -106,21 +125,43 @@ public class KerasLstm extends KerasLayer {
                 log.warn("Specifying different initialization for recurrent weights not supported.");
         getRecurrentDropout(layerConfig);
         this.unroll = getUnrollRecurrentLayer(layerConfig);
-        this.layer = new GravesLSTM.Builder().gateActivationFunction(getGateActivationFromConfig(layerConfig))
+
+        LayerConstraint biasConstraint = KerasConstraintUtils.getConstraintsFromConfig(
+                layerConfig, conf.getLAYER_FIELD_B_CONSTRAINT(), conf, kerasMajorVersion);
+        LayerConstraint weightConstraint = KerasConstraintUtils.getConstraintsFromConfig(
+                layerConfig, conf.getLAYER_FIELD_W_CONSTRAINT(), conf, kerasMajorVersion);
+        LayerConstraint recurrentConstraint = KerasConstraintUtils.getConstraintsFromConfig(
+                layerConfig, conf.getLAYER_FIELD_RECURRENT_CONSTRAINT(), conf, kerasMajorVersion);
+
+        LSTM.Builder builder = new LSTM.Builder()
+                        .gateActivationFunction(getGateActivationFromConfig(layerConfig))
                         .forgetGateBiasInit(getForgetBiasInitFromConfig(layerConfig, enforceTrainingConfig))
-                        .name(this.layerName).nOut(getNOutFromConfig(layerConfig, conf)).dropOut(this.dropout)
+                        .name(this.layerName)
+                        .nOut(getNOutFromConfig(layerConfig, conf))
+                        .dropOut(this.dropout)
                         .activation(getActivationFromConfig(layerConfig, conf))
-                        .weightInit(weightInit).biasInit(0.0)
-                        .l1(this.weightL1Regularization).l2(this.weightL2Regularization).build();
+                        .weightInit(weightInit)
+                        .biasInit(0.0)
+                        .l1(this.weightL1Regularization)
+                        .l2(this.weightL2Regularization);
+        if (distribution != null)
+            builder.dist(distribution);
+        if (biasConstraint != null)
+            builder.constrainBias(biasConstraint);
+        if (weightConstraint != null)
+            builder.constrainInputWeights(weightConstraint);
+        if (recurrentConstraint != null)
+            builder.constrainRecurrent(recurrentConstraint);
+        this.layer = builder.build();
     }
 
     /**
-     * Get DL4J GravesLSTMLayer.
+     * Get DL4J LSTM layer.
      *
-     * @return  GravesLSTMLayer
+     * @return  LSTM Layer
      */
-    public GravesLSTM getGravesLSTMLayer() {
-        return (GravesLSTM) this.layer;
+    public LSTM getLSTMLayer() {
+        return (LSTM) this.layer;
     }
 
     /**
@@ -135,7 +176,11 @@ public class KerasLstm extends KerasLayer {
         if (inputType.length > 1)
             throw new InvalidKerasConfigurationException(
                             "Keras LSTM layer accepts only one input (received " + inputType.length + ")");
-        return this.getGravesLSTMLayer().getOutputType(-1, inputType[0]);
+        InputPreProcessor preProcessor = getInputPreprocessor(inputType);
+        if (preProcessor != null)
+            return  preProcessor.getOutputType(inputType[0]);
+        else
+            return this.getLSTMLayer().getOutputType(-1, inputType[0]);
     }
 
     /**
@@ -149,13 +194,35 @@ public class KerasLstm extends KerasLayer {
     }
 
     /**
+     * Gets appropriate DL4J InputPreProcessor for given InputTypes.
+     *
+     * @param  inputType    Array of InputTypes
+     * @return              DL4J InputPreProcessor
+     * @throws InvalidKerasConfigurationException Invalid Keras configuration exception
+     * @see org.deeplearning4j.nn.conf.InputPreProcessor
+     */
+    @Override
+    public InputPreProcessor getInputPreprocessor(InputType... inputType) throws InvalidKerasConfigurationException {
+        if (inputType.length > 1)
+            throw new InvalidKerasConfigurationException(
+                    "Keras LSTM layer accepts only one input (received " + inputType.length + ")");
+        InputPreProcessor preprocessor = null;
+        if (inputType[0] instanceof InputType.InputTypeFeedForward) {
+            preprocessor = new FeedForwardToRnnPreProcessor();
+        }
+        return preprocessor;
+    }
+
+
+
+    /**
      * Set weights for layer.
      *
      * @param weights
      */
     @Override
     public void setWeights(Map<String, INDArray> weights) throws InvalidKerasConfigurationException {
-        this.weights = new HashMap<String, INDArray>();
+        this.weights = new HashMap<>();
         /* Keras stores LSTM parameters in distinct arrays (e.g., the recurrent weights
          * are stored in four matrices: U_c, U_f, U_i, U_o) while DL4J stores them
          * concatenated into one matrix (e.g., U = [ U_c U_f U_o U_i ]). Thus we have
@@ -282,13 +349,9 @@ public class KerasLstm extends KerasLayer {
                         NDArrayIndex.interval(W_c.columns() + W_f.columns() + W_o.columns(),
                                         W_c.columns() + W_f.columns() + W_o.columns() + W_i.columns())},
                         W_i);
-        this.weights.put(GravesLSTMParamInitializer.INPUT_WEIGHT_KEY, W);
+        this.weights.put(LSTMParamInitializer.INPUT_WEIGHT_KEY, W);
 
-
-        /* DL4J has three additional columns in its recurrent weights matrix that don't appear in Keras LSTMs.
-         * These are for peephole connections. Since Keras doesn't use them, we zero them out.
-         */
-        INDArray U = Nd4j.zeros(U_c.rows(), U_c.columns() + U_f.columns() + U_o.columns() + U_i.columns() + 3);
+        INDArray U = Nd4j.zeros(U_c.rows(), U_c.columns() + U_f.columns() + U_o.columns() + U_i.columns());
         U.put(new INDArrayIndex[] {NDArrayIndex.interval(0, U.rows()), NDArrayIndex.interval(0, U_c.columns())}, U_c);
         U.put(new INDArrayIndex[] {NDArrayIndex.interval(0, U.rows()),
                         NDArrayIndex.interval(U_c.columns(), U_c.columns() + U_f.columns())}, U_f);
@@ -298,7 +361,7 @@ public class KerasLstm extends KerasLayer {
                         NDArrayIndex.interval(U_c.columns() + U_f.columns() + U_o.columns(),
                                         U_c.columns() + U_f.columns() + U_o.columns() + U_i.columns())},
                         U_i);
-        this.weights.put(GravesLSTMParamInitializer.RECURRENT_WEIGHT_KEY, U);
+        this.weights.put(LSTMParamInitializer.RECURRENT_WEIGHT_KEY, U);
 
         INDArray b = Nd4j.zeros(b_c.rows(), b_c.columns() + b_f.columns() + b_o.columns() + b_i.columns());
         b.put(new INDArrayIndex[] {NDArrayIndex.interval(0, b.rows()), NDArrayIndex.interval(0, b_c.columns())}, b_c);
@@ -310,7 +373,7 @@ public class KerasLstm extends KerasLayer {
                         NDArrayIndex.interval(b_c.columns() + b_f.columns() + b_o.columns(),
                                         b_c.columns() + b_f.columns() + b_o.columns() + b_i.columns())},
                         b_i);
-        this.weights.put(GravesLSTMParamInitializer.BIAS_KEY, b);
+        this.weights.put(LSTMParamInitializer.BIAS_KEY, b);
 
         if (weights.size() > NUM_WEIGHTS_IN_KERAS_LSTM) {
             Set<String> paramNames = weights.keySet();

@@ -3,9 +3,9 @@ package org.deeplearning4j.nn.conf.layers;
 import lombok.*;
 import org.deeplearning4j.nn.api.Layer;
 import org.deeplearning4j.nn.api.ParamInitializer;
+import org.deeplearning4j.nn.api.layers.LayerConstraint;
 import org.deeplearning4j.nn.conf.InputPreProcessor;
 import org.deeplearning4j.nn.conf.NeuralNetConfiguration;
-import org.deeplearning4j.nn.conf.Updater;
 import org.deeplearning4j.nn.conf.inputs.InputType;
 import org.deeplearning4j.nn.conf.memory.LayerMemoryReport;
 import org.deeplearning4j.nn.conf.memory.MemoryReport;
@@ -16,7 +16,9 @@ import org.nd4j.linalg.api.ndarray.INDArray;
 import org.nd4j.linalg.learning.config.IUpdater;
 import org.nd4j.linalg.learning.config.NoOp;
 
+import java.util.Arrays;
 import java.util.Collection;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -44,6 +46,7 @@ public class BatchNormalization extends FeedForwardLayer {
         this.gamma = builder.gamma;
         this.beta = builder.beta;
         this.lockGammaBeta = builder.lockGammaBeta;
+        initializeConstraints(builder);
     }
 
     @Override
@@ -138,35 +141,7 @@ public class BatchNormalization extends FeedForwardLayer {
     }
 
     @Override
-    public double getLearningRateByParam(String paramName) {
-        switch (paramName) {
-            case BatchNormalizationParamInitializer.BETA:
-            case BatchNormalizationParamInitializer.GAMMA:
-                return learningRate;
-            case BatchNormalizationParamInitializer.GLOBAL_MEAN:
-            case BatchNormalizationParamInitializer.GLOBAL_VAR:
-                return 0.0;
-            default:
-                throw new IllegalArgumentException("Unknown parameter: \"" + paramName + "\"");
-        }
-    }
-
-    @Override
-    public Updater getUpdaterByParam(String paramName) {
-        switch (paramName) {
-            case BatchNormalizationParamInitializer.BETA:
-            case BatchNormalizationParamInitializer.GAMMA:
-                return updater;
-            case BatchNormalizationParamInitializer.GLOBAL_MEAN:
-            case BatchNormalizationParamInitializer.GLOBAL_VAR:
-                return Updater.NONE;
-            default:
-                throw new IllegalArgumentException("Unknown parameter: \"" + paramName + "\"");
-        }
-    }
-
-    @Override
-    public IUpdater getIUpdaterByParam(String paramName) {
+    public IUpdater getUpdaterByParam(String paramName) {
         switch (paramName) {
             case BatchNormalizationParamInitializer.BETA:
             case BatchNormalizationParamInitializer.GAMMA:
@@ -189,7 +164,7 @@ public class BatchNormalization extends FeedForwardLayer {
         int updaterStateSize = 0;
 
         for (String s : BatchNormalizationParamInitializer.keys()) {
-            updaterStateSize += getIUpdaterByParam(s).stateSize(nOut);
+            updaterStateSize += getUpdaterByParam(s).stateSize(nOut);
         }
 
         //During forward pass: working memory size approx. equal to 2x input size (copy ops, etc)
@@ -221,6 +196,8 @@ public class BatchNormalization extends FeedForwardLayer {
         protected boolean lockGammaBeta = false;
         protected double gamma = 1.0;
         protected double beta = 0.0;
+        protected List<LayerConstraint> betaConstraints;
+        protected List<LayerConstraint> gammaConstraints;
 
         public Builder(double decay, boolean isMinibatch) {
             this.decay = decay;
@@ -313,6 +290,30 @@ public class BatchNormalization extends FeedForwardLayer {
          */
         public Builder lockGammaBeta(boolean lockGammaBeta) {
             this.lockGammaBeta = lockGammaBeta;
+            return this;
+        }
+
+        /**
+         * Set constraints to be applied to the beta parameter of this batch normalisation layer. Default: no constraints.<br>
+         * Constraints can be used to enforce certain conditions (non-negativity of parameters, max-norm regularization,
+         * etc). These constraints are applied at each iteration, after the parameters have been updated.
+         *
+         * @param constraints Constraints to apply to the beta parameter of this layer
+         */
+        public Builder constrainBeta(LayerConstraint... constraints) {
+            this.betaConstraints = Arrays.asList(constraints);
+            return this;
+        }
+
+        /**
+         * Set constraints to be applied to the gamma parameter of this batch normalisation layer. Default: no constraints.<br>
+         * Constraints can be used to enforce certain conditions (non-negativity of parameters, max-norm regularization,
+         * etc). These constraints are applied at each iteration, after the parameters have been updated.
+         *
+         * @param constraints Constraints to apply to the gamma parameter of this layer
+         */
+        public Builder constrainGamma(LayerConstraint... constraints) {
+            this.gammaConstraints = Arrays.asList(constraints);
             return this;
         }
 

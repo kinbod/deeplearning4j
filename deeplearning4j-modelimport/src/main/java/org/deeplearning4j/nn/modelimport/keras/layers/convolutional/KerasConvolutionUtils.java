@@ -106,6 +106,33 @@ public class KerasConvolutionUtils {
 
     }
 
+    /**
+     * Get upsampling size from Keras layer configuration.
+     *
+     * @param layerConfig dictionary containing Keras layer configuration
+     * @return
+     * @throws InvalidKerasConfigurationException
+     */
+    public static int[] getUpsamplingSizeFromConfig(Map<String, Object> layerConfig, int dimension,
+                                                KerasLayerConfiguration conf)
+            throws InvalidKerasConfigurationException {
+        Map<String, Object> innerConfig = KerasLayerUtils.getInnerLayerConfigFromConfig(layerConfig, conf);
+        int[] size;
+            if (innerConfig.containsKey(conf.getLAYER_FIELD_UPSAMPLING_2D_SIZE()) && dimension == 2) {
+                List<Integer> sizeList = (List<Integer>) innerConfig.get(conf.getLAYER_FIELD_UPSAMPLING_2D_SIZE());
+                size = ArrayUtil.toArray(sizeList);
+            } else if (innerConfig.containsKey(conf.getLAYER_FIELD_UPSAMPLING_1D_SIZE()) && dimension == 1) {
+                int upsamplingSize1D = (int) innerConfig.get(conf.getLAYER_FIELD_UPSAMPLING_1D_SIZE());
+                size = new int[]{ upsamplingSize1D };
+            } else {
+                throw new InvalidKerasConfigurationException("Could not determine kernel size: no "
+                        + conf.getLAYER_FIELD_UPSAMPLING_1D_SIZE() + ", "
+                        + conf.getLAYER_FIELD_UPSAMPLING_2D_SIZE());
+            }
+        return size;
+    }
+
+
 
     /**
      * Get (convolution) kernel size from Keras layer configuration.
@@ -228,6 +255,50 @@ public class KerasConvolutionUtils {
             padding = getKernelSizeFromConfig(layerConfig, dimension, conf, kerasMajorVersion);
             for (int i = 0; i < padding.length; i++)
                 padding[i]--;
+        }
+        return padding;
+    }
+
+    /**
+     * Get zero padding from Keras layer configuration.
+     *
+     * @param layerConfig       dictionary containing Keras layer configuration
+     * @param conf              KerasLayerConfiguration
+     * @param dimension         Dimension of the padding layer
+     * @return padding list of integers
+     * @throws InvalidKerasConfigurationException Invalid keras configuration
+     */
+    public static int[] getZeroPaddingFromConfig(Map<String, Object> layerConfig, KerasLayerConfiguration conf, int dimension)
+            throws InvalidKerasConfigurationException, UnsupportedKerasConfigurationException {
+        Map<String, Object> innerConfig = KerasLayerUtils.getInnerLayerConfigFromConfig(layerConfig, conf);
+        if (!innerConfig.containsKey(conf.getLAYER_FIELD_ZERO_PADDING()))
+            throw new InvalidKerasConfigurationException(
+                    "Field " + conf.getLAYER_FIELD_ZERO_PADDING() + " not found in Keras ZeroPadding layer");
+        int[] padding;
+        if (dimension == 2) {
+            List<Integer> paddingList;
+            // For 2D layers, padding can either be a pair [x, y] or a single integer x.
+            try {
+                paddingList = (List<Integer>) innerConfig.get(conf.getLAYER_FIELD_ZERO_PADDING());
+                if (paddingList.size() == 2) {
+                    paddingList.add(paddingList.get(1));
+                    paddingList.add(1, paddingList.get(0));
+                    padding = ArrayUtil.toArray(paddingList);
+                }
+                else
+                    throw new InvalidKerasConfigurationException("Found Keras ZeroPadding2D layer with invalid "
+                            + paddingList.size() + "D padding.");
+            } catch (Exception e) {
+                int paddingInt = (int) innerConfig.get(conf.getLAYER_FIELD_ZERO_PADDING());
+                padding = new int[]{ paddingInt, paddingInt };
+            }
+
+        } else if (dimension == 1) {
+            int paddingInt = (int) innerConfig.get(conf.getLAYER_FIELD_ZERO_PADDING());
+            padding = new int[]{ paddingInt };
+        } else {
+            throw new UnsupportedKerasConfigurationException(
+                    "Keras padding layer not supported");
         }
         return padding;
     }

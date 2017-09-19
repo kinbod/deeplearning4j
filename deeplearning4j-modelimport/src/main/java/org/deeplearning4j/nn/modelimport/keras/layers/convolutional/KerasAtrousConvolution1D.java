@@ -17,10 +17,15 @@
  */
 package org.deeplearning4j.nn.modelimport.keras.layers.convolutional;
 
+import org.deeplearning4j.nn.api.layers.LayerConstraint;
+import org.deeplearning4j.nn.conf.distribution.Distribution;
 import org.deeplearning4j.nn.conf.inputs.InputType;
 import org.deeplearning4j.nn.conf.layers.Convolution1DLayer;
 import org.deeplearning4j.nn.modelimport.keras.exceptions.InvalidKerasConfigurationException;
 import org.deeplearning4j.nn.modelimport.keras.exceptions.UnsupportedKerasConfigurationException;
+import org.deeplearning4j.nn.modelimport.keras.utils.KerasConstraintUtils;
+import org.deeplearning4j.nn.weights.WeightInit;
+import org.nd4j.linalg.primitives.Pair;
 
 import java.util.Map;
 
@@ -73,11 +78,20 @@ public class KerasAtrousConvolution1D extends KerasConvolution {
         hasBias = getHasBiasFromConfig(layerConfig, conf);
         numTrainableParams = hasBias ? 2 : 1;
 
+        LayerConstraint biasConstraint = KerasConstraintUtils.getConstraintsFromConfig(
+                layerConfig, conf.getLAYER_FIELD_B_CONSTRAINT(), conf, kerasMajorVersion);
+        LayerConstraint weightConstraint = KerasConstraintUtils.getConstraintsFromConfig(
+                layerConfig, conf.getLAYER_FIELD_W_CONSTRAINT(), conf, kerasMajorVersion);
+
+        Pair<WeightInit, Distribution> init = getWeightInitFromConfig(layerConfig, conf.getLAYER_FIELD_INIT(),
+                enforceTrainingConfig, conf, kerasMajorVersion);
+        WeightInit weightInit = init.getFirst();
+        Distribution distribution = init.getSecond();
+
         Convolution1DLayer.Builder builder = new Convolution1DLayer.Builder().name(this.layerName)
                 .nOut(getNOutFromConfig(layerConfig, conf)).dropOut(this.dropout)
                 .activation(getActivationFromConfig(layerConfig, conf))
-                .weightInit(getWeightInitFromConfig(layerConfig, conf.getLAYER_FIELD_INIT(),
-                        enforceTrainingConfig, conf, kerasMajorVersion))
+                .weightInit(weightInit)
                 .dilation(getDilationRate(layerConfig, 1, conf, true))
                 .l1(this.weightL1Regularization).l2(this.weightL2Regularization)
                 .convolutionMode(getConvolutionModeFromConfig(layerConfig, conf))
@@ -85,10 +99,16 @@ public class KerasAtrousConvolution1D extends KerasConvolution {
                 .hasBias(hasBias)
                 .stride(getStrideFromConfig(layerConfig, 1, conf)[0]);
         int[] padding = getPaddingFromBorderModeConfig(layerConfig, 1, conf, kerasMajorVersion);
+        if (distribution != null)
+            builder.dist(distribution);
         if (hasBias)
             builder.biasInit(0.0);
         if (padding != null)
             builder.padding(padding[0]);
+        if (biasConstraint != null)
+            builder.constrainBias(biasConstraint);
+        if (weightConstraint != null)
+            builder.constrainWeights(weightConstraint);
         this.layer = builder.build();
     }
 

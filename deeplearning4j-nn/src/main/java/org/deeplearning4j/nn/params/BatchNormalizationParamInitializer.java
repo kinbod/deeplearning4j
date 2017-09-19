@@ -52,6 +52,31 @@ public class BatchNormalizationParamInitializer implements ParamInitializer {
     }
 
     @Override
+    public List<String> paramKeys(Layer layer) {
+        return Arrays.asList(GAMMA, BETA, GLOBAL_MEAN, GLOBAL_VAR);
+    }
+
+    @Override
+    public List<String> weightKeys(Layer layer) {
+        return Collections.emptyList();
+    }
+
+    @Override
+    public List<String> biasKeys(Layer layer) {
+        return Collections.emptyList();
+    }
+
+    @Override
+    public boolean isWeightParam(String key) {
+        return false;
+    }
+
+    @Override
+    public boolean isBiasParam(String key) {
+        return false;
+    }
+
+    @Override
     public Map<String, INDArray> init(NeuralNetConfiguration conf, INDArray paramView, boolean initializeParams) {
         Map<String, INDArray> params = Collections.synchronizedMap(new LinkedHashMap<String, INDArray>());
         // TODO setup for RNN

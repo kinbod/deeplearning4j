@@ -6,7 +6,6 @@ import org.bytedeco.javacpp.Pointer;
 import org.deeplearning4j.api.storage.StatsStorageRouter;
 import org.deeplearning4j.api.storage.StorageMetaData;
 import org.deeplearning4j.api.storage.listener.RoutingIterationListener;
-import org.nd4j.linalg.primitives.Pair;
 import org.deeplearning4j.nn.api.Layer;
 import org.deeplearning4j.nn.api.Model;
 import org.deeplearning4j.nn.conf.NeuralNetConfiguration;
@@ -21,6 +20,7 @@ import org.nd4j.linalg.api.buffer.util.DataTypeUtil;
 import org.nd4j.linalg.api.memory.MemoryWorkspace;
 import org.nd4j.linalg.api.ndarray.INDArray;
 import org.nd4j.linalg.factory.Nd4j;
+import org.nd4j.linalg.primitives.Pair;
 import org.nd4j.nativeblas.NativeOps;
 import org.nd4j.nativeblas.NativeOpsHolder;
 
@@ -97,8 +97,7 @@ public abstract class BaseStatsListener implements RoutingIterationListener {
     }
 
     /**
-     * Create a StatsListener with network information collected at every iteration. Equivalent to {@link #StatsListener(StatsStorageRouter, int)}
-     * with {@code listenerFrequency == 1}
+     * Create a StatsListener with network information collected at every iteration.
      *
      * @param router Where/how to store the calculated stats. For example, {@link org.deeplearning4j.ui.storage.InMemoryStatsStorage} or
      *               {@link org.deeplearning4j.ui.storage.FileStatsStorage}
@@ -412,32 +411,30 @@ public abstract class BaseStatsListener implements RoutingIterationListener {
                 int layerIdx = 0;
                 for (Layer l : ((MultiLayerNetwork) model).getLayers()) {
                     NeuralNetConfiguration conf = l.conf();
-                    Map<String, Double> layerLrs = conf.getLearningRateByParam();
-                    Set<String> backpropParams = l.paramTable(true).keySet();
-                    for (Map.Entry<String, Double> entry : layerLrs.entrySet()) {
-                        if (!backpropParams.contains(entry.getKey()))
-                            continue; //Skip pretrain params
-                        lrs.put(layerIdx + "_" + entry.getKey(), entry.getValue());
+                    List<String> paramkeys = l.conf().getLayer().initializer().paramKeys(l.conf().getLayer());
+                    for(String s : paramkeys){
+                        double lr = conf.getLayer().getUpdaterByParam(s).getLearningRate(l.getIterationCount(), l.getEpochCount());
+                        lrs.put(layerIdx + "_" + s, lr);
                     }
                     layerIdx++;
                 }
             } else if (model instanceof ComputationGraph) {
                 for (Layer l : ((ComputationGraph) model).getLayers()) {
-                    //Need to append layer name
                     NeuralNetConfiguration conf = l.conf();
-                    Map<String, Double> layerLrs = conf.getLearningRateByParam();
                     String layerName = conf.getLayer().getLayerName();
-                    Set<String> backpropParams = l.paramTable(true).keySet();
-                    for (Map.Entry<String, Double> entry : layerLrs.entrySet()) {
-                        if (!backpropParams.contains(entry.getKey()))
-                            continue; //Skip pretrain params
-                        lrs.put(layerName + "_" + entry.getKey(), entry.getValue());
+                    List<String> paramkeys = l.conf().getLayer().initializer().paramKeys(l.conf().getLayer());
+                    for(String s : paramkeys){
+                        double lr = conf.getLayer().getUpdaterByParam(s).getLearningRate(l.getIterationCount(), l.getEpochCount());
+                        lrs.put(layerName + "_" + s, lr);
                     }
                 }
             } else if (model instanceof Layer) {
                 Layer l = (Layer) model;
-                Map<String, Double> map = l.conf().getLearningRateByParam();
-                lrs.putAll(map);
+                List<String> paramkeys = l.conf().getLayer().initializer().paramKeys(l.conf().getLayer());
+                for(String s : paramkeys){
+                    double lr = l.conf().getLayer().getUpdaterByParam(s).getLearningRate(l.getIterationCount(), l.getEpochCount());
+                    lrs.put(s, lr);
+                }
             }
             report.reportLearningRates(lrs);
         }

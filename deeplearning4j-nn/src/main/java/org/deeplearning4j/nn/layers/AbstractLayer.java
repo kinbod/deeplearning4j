@@ -20,19 +20,19 @@ package org.deeplearning4j.nn.layers;
 
 import lombok.Data;
 import lombok.NoArgsConstructor;
-import org.nd4j.linalg.primitives.Pair;
 import org.deeplearning4j.nn.api.Layer;
 import org.deeplearning4j.nn.api.MaskState;
+import org.deeplearning4j.nn.api.layers.LayerConstraint;
 import org.deeplearning4j.nn.conf.CacheMode;
 import org.deeplearning4j.nn.conf.NeuralNetConfiguration;
 import org.deeplearning4j.nn.gradient.Gradient;
 import org.deeplearning4j.nn.graph.ComputationGraph;
 import org.deeplearning4j.optimize.api.ConvexOptimizer;
 import org.deeplearning4j.optimize.api.IterationListener;
-import org.deeplearning4j.util.Dropout;
 import org.nd4j.linalg.api.memory.MemoryWorkspace;
 import org.nd4j.linalg.api.ndarray.INDArray;
 import org.nd4j.linalg.factory.Nd4j;
+import org.nd4j.linalg.primitives.Pair;
 
 import java.util.*;
 
@@ -52,6 +52,9 @@ public abstract class AbstractLayer<LayerConfT extends org.deeplearning4j.nn.con
     protected INDArray maskArray;
     protected MaskState maskState;
     protected CacheMode cacheMode = CacheMode.NONE;
+
+    protected int iterationCount;
+    protected int epochCount;
 
     public AbstractLayer(NeuralNetConfiguration conf) {
         this.conf = conf;
@@ -141,22 +144,6 @@ public abstract class AbstractLayer<LayerConfT extends org.deeplearning4j.nn.con
     @Override
     public void setListeners(IterationListener... listeners) {
         setListeners(Arrays.asList(listeners));
-    }
-
-    @Override
-    public Gradient error(INDArray errorSignal) {
-        throw new UnsupportedOperationException("Not supported");
-    }
-
-    @Override
-    @Deprecated
-    public INDArray derivativeActivation(INDArray input) {
-        throw new UnsupportedOperationException("Deprecated - " + layerId());
-    }
-
-    @Override
-    public Gradient calcGradient(Gradient layerError, INDArray activation) {
-        throw new UnsupportedOperationException("Not supported");
     }
 
     @Override
@@ -354,30 +341,20 @@ public abstract class AbstractLayer<LayerConfT extends org.deeplearning4j.nn.con
         input = null;
     }
 
-    protected void applyDropOutIfNecessary(boolean training) {
-        if (layerConf().getDropOut() > 0 && !conf.isUseDropConnect() && training && !dropoutApplied) {
+    protected void applyDropOutIfNecessary(boolean training){//} int iteration, int epoch) {
+        if(training && !dropoutApplied && layerConf().getIDropout() != null ){
+            //TODO: Epoch + iteration counters...
             if (Nd4j.getWorkspaceManager().checkIfWorkspaceExists(ComputationGraph.workspaceExternal)) {
                 try (MemoryWorkspace ws = Nd4j.getWorkspaceManager()
-                                .getWorkspaceForCurrentThread(ComputationGraph.workspaceExternal)
-                                .notifyScopeBorrowed()) {
-                    input = input.isView() ? input.dup() : input.unsafeDuplication();
+                        .getWorkspaceForCurrentThread(ComputationGraph.workspaceExternal)
+                        .notifyScopeBorrowed()) {
+                    input = layerConf().getIDropout().applyDropout(input, getIterationCount(), getEpochCount(), false);
                 }
-            } else
-                input = input.isView() ? input.dup() : input.unsafeDuplication();
-
-            Dropout.applyDropout(input, layerConf().getDropOut());
+            } else {
+                input = layerConf().getIDropout().applyDropout(input, getIterationCount(), getEpochCount(), false);
+            }
             dropoutApplied = true;
         }
-    }
-
-    /**
-     * Averages the given logistic regression from a mini batch into this layer
-     * @param l the logistic regression layer to average into this layer
-     * @param batchSize  the batch size
-     */
-    @Override
-    public void merge(Layer l, int batchSize) {
-        throw new UnsupportedOperationException();
     }
 
     @Override
@@ -435,11 +412,6 @@ public abstract class AbstractLayer<LayerConfT extends org.deeplearning4j.nn.con
     }
 
     @Override
-    public void applyLearningRateScoreDecay() {
-        throw new UnsupportedOperationException("Not supported");
-    }
-
-    @Override
     public void setMaskArray(INDArray maskArray) {
         this.maskArray = maskArray;
     }
@@ -484,5 +456,15 @@ public abstract class AbstractLayer<LayerConfT extends org.deeplearning4j.nn.con
     public void accumulateScore(double accum) {
         throw new UnsupportedOperationException(
                         "Not supported for this layer, or should be overridden for layers requiring it");
+    }
+
+
+    @Override
+    public void applyConstraints(int iteration, int epoch){
+        if(layerConf().getConstraints() != null){
+            for(LayerConstraint lc : layerConf().getConstraints()){
+                lc.applyConstraint(this, iteration, epoch);
+            }
+        }
     }
 }

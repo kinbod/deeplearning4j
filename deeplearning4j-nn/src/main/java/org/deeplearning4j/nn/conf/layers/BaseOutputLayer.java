@@ -1,6 +1,9 @@
 package org.deeplearning4j.nn.conf.layers;
 
-import lombok.*;
+import lombok.Data;
+import lombok.EqualsAndHashCode;
+import lombok.NoArgsConstructor;
+import lombok.ToString;
 import org.deeplearning4j.nn.conf.inputs.InputType;
 import org.deeplearning4j.nn.conf.memory.LayerMemoryReport;
 import org.deeplearning4j.nn.conf.memory.MemoryReport;
@@ -17,7 +20,6 @@ import org.nd4j.linalg.lossfunctions.impl.LossNegativeLogLikelihood;
 @EqualsAndHashCode(callSuper = true)
 public abstract class BaseOutputLayer extends FeedForwardLayer {
     protected ILossFunction lossFn;
-    @Getter(AccessLevel.NONE)
     protected boolean hasBias = true;
 
     protected BaseOutputLayer(Builder builder) {
@@ -61,7 +63,7 @@ public abstract class BaseOutputLayer extends FeedForwardLayer {
 
         int trainSizeFixed = 0;
         int trainSizeVariable = 0;
-        if (getDropOut() > 0) {
+        if (getIDropout() != null) {
             if (false) {
                 //TODO drop connect
                 //Dup the weights... note that this does NOT depend on the minibatch size...

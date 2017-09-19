@@ -31,7 +31,6 @@ import org.datavec.api.records.reader.SequenceRecordReader;
 import org.datavec.api.util.ndarray.RecordConverter;
 import org.datavec.api.writable.NDArrayWritable;
 import org.datavec.api.writable.Writable;
-import org.nd4j.linalg.primitives.Pair;
 import org.deeplearning4j.datasets.datavec.exception.ZeroLengthSequenceException;
 import org.deeplearning4j.exception.DL4JException;
 import org.nd4j.linalg.api.ndarray.INDArray;
@@ -41,8 +40,10 @@ import org.nd4j.linalg.dataset.api.iterator.MultiDataSetIterator;
 import org.nd4j.linalg.factory.Nd4j;
 import org.nd4j.linalg.indexing.INDArrayIndex;
 import org.nd4j.linalg.indexing.NDArrayIndex;
+import org.nd4j.linalg.primitives.Pair;
 
 import java.io.IOException;
+import java.io.Serializable;
 import java.util.*;
 
 /**
@@ -56,7 +57,8 @@ import java.util.*;
  *
  * @author Alex Black
  */
-public class RecordReaderMultiDataSetIterator implements MultiDataSetIterator {
+@Getter
+public class RecordReaderMultiDataSetIterator implements MultiDataSetIterator, Serializable {
 
     /**
      * When dealing with time series data of different lengths, how should we align the input/labels time series?
@@ -177,7 +179,7 @@ public class RecordReaderMultiDataSetIterator implements MultiDataSetIterator {
         return nextMultiDataSet(nextRRVals, nextRRValsBatched, nextSeqRRVals, nextMetas);
     }
 
-    private MultiDataSet nextMultiDataSet(Map<String, List<List<Writable>>> nextRRVals,
+    public MultiDataSet nextMultiDataSet(Map<String, List<List<Writable>>> nextRRVals,
                     Map<String, List<Writable>> nextRRValsBatched,
                     Map<String, List<List<List<Writable>>>> nextSeqRRVals,
                     List<RecordMetaDataComposableMap> nextMetas) {
@@ -885,7 +887,7 @@ public class RecordReaderMultiDataSetIterator implements MultiDataSetIterator {
     }
 
     @AllArgsConstructor
-    private static class SubsetDetails {
+    private static class SubsetDetails implements Serializable {
         private final String readerName;
         private final boolean entireReader;
         private final boolean oneHot;

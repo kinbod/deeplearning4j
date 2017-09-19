@@ -21,11 +21,14 @@ package org.deeplearning4j.nn.conf.layers;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.deeplearning4j.nn.api.ParamInitializer;
+import org.deeplearning4j.nn.api.layers.LayerConstraint;
 import org.deeplearning4j.nn.conf.InputPreProcessor;
 import org.deeplearning4j.nn.conf.NeuralNetConfiguration;
-import org.deeplearning4j.nn.conf.Updater;
+import org.deeplearning4j.nn.conf.dropout.Dropout;
+import org.deeplearning4j.nn.conf.dropout.IDropout;
 import org.deeplearning4j.nn.conf.inputs.InputType;
 import org.deeplearning4j.nn.conf.layers.misc.FrozenLayer;
+import org.deeplearning4j.nn.conf.layers.objdetect.Yolo2OutputLayer;
 import org.deeplearning4j.nn.conf.layers.variational.VariationalAutoencoder;
 import org.deeplearning4j.nn.conf.memory.LayerMemoryReport;
 import org.deeplearning4j.optimize.api.IterationListener;
@@ -37,7 +40,7 @@ import org.nd4j.shade.jackson.annotation.JsonTypeInfo.As;
 import org.nd4j.shade.jackson.annotation.JsonTypeInfo.Id;
 
 import java.io.Serializable;
-import java.util.Collection;
+import java.util.*;
 
 /**
  * A neural network layer.
@@ -64,17 +67,60 @@ import java.util.Collection;
                 @JsonSubTypes.Type(value = DropoutLayer.class, name = "dropout"),
                 @JsonSubTypes.Type(value = GlobalPoolingLayer.class, name = "GlobalPooling"),
                 @JsonSubTypes.Type(value = ZeroPaddingLayer.class, name = "zeroPadding"),
-                @JsonSubTypes.Type(value = FrozenLayer.class, name = "FrozenLayer")})
+                @JsonSubTypes.Type(value = ZeroPadding1DLayer.class, name = "zeroPadding1d"),
+                @JsonSubTypes.Type(value = FrozenLayer.class, name = "FrozenLayer"),
+                @JsonSubTypes.Type(value = Upsampling2D.class, name = "Upsampling2D"),
+                @JsonSubTypes.Type(value = Yolo2OutputLayer.class, name = "Yolo2OutputLayer")
+})
 @Data
 @NoArgsConstructor
 public abstract class Layer implements Serializable, Cloneable {
     protected String layerName;
-    protected double dropOut;
+    protected IDropout iDropout;
+    protected List<LayerConstraint> constraints;
 
 
     public Layer(Builder builder) {
         this.layerName = builder.layerName;
-        this.dropOut = builder.dropOut;
+        this.iDropout = builder.iDropout;
+    }
+
+    /**
+     * Initialize the weight constraints. Should be called last, in the outer-most constructor
+     */
+    protected void initializeConstraints(Builder<?> builder){
+        //Note: this has to be done AFTER all constructors have finished - otherwise the required
+        // fields may not yet be set yet
+        List<LayerConstraint> allConstraints = new ArrayList<>();
+        if (builder.allParamConstraints != null && initializer().paramKeys(this).size() > 0) {
+            for (LayerConstraint c : builder.allParamConstraints) {
+                LayerConstraint c2 = c.clone();
+                c2.setParams(new HashSet<>(initializer().paramKeys(this)));
+                allConstraints.add(c2);
+            }
+        }
+
+        if (builder.weightConstraints != null && initializer().weightKeys(this).size() > 0) {
+            for (LayerConstraint c : builder.weightConstraints) {
+                LayerConstraint c2 = c.clone();
+                c2.setParams(new HashSet<>(initializer().weightKeys(this)));
+                allConstraints.add(c2);
+            }
+        }
+
+        if (builder.biasConstraints != null && initializer().biasKeys(this).size() > 0) {
+            for (LayerConstraint c : builder.biasConstraints) {
+                LayerConstraint c2 = c.clone();
+                c2.setParams(new HashSet<>(initializer().biasKeys(this)));
+                allConstraints.add(c2);
+            }
+        }
+        if(allConstraints.size() > 0) {
+            this.constraints = allConstraints;
+        } else {
+            this.constraints = null;
+        }
+        this.iDropout = builder.iDropout;
     }
 
     /**
@@ -84,7 +130,8 @@ public abstract class Layer implements Serializable, Cloneable {
      */
     public void resetLayerDefaultConfig() {
         //clear the learning related params for all layers in the origConf and set to defaults
-        this.setDropOut(Double.NaN);
+        this.iDropout = null;
+        this.constraints = null;
     }
 
     @Override
@@ -100,6 +147,9 @@ public abstract class Layer implements Serializable, Cloneable {
                     Collection<IterationListener> iterationListeners, int layerIndex, INDArray layerParamsView,
                     boolean initializeParams);
 
+    /**
+     * @return The parameter initializer for this model
+     */
     public abstract ParamInitializer initializer();
 
     /**
@@ -155,16 +205,6 @@ public abstract class Layer implements Serializable, Cloneable {
     public abstract double getL2ByParam(String paramName);
 
     /**
-     * Get the (initial) learning rate coefficient for the given parameter.
-     * Different parameters may be configured to have different learning rates, though commonly all parameters will
-     * have the same learning rate
-     *
-     * @param paramName    Parameter name
-     * @return Initial learning rate value for that parameter
-     */
-    public abstract double getLearningRateByParam(String paramName);
-
-    /**
      * Is the specified parameter a layerwise pretraining only parameter?<br>
      * For example, visible bias params in an autoencoder (or, decoder params in a variational autoencoder) aren't
      * used during supervised backprop.<br>
@@ -180,23 +220,9 @@ public abstract class Layer implements Serializable, Cloneable {
      * is not necessarily the case
      *
      * @param paramName    Parameter name
-     * @return             Updater for the parameter
-     * @deprecated Use {@link #getIUpdaterByParam(String)}
-     */
-    @Deprecated
-    public Updater getUpdaterByParam(String paramName) {
-        throw new UnsupportedOperationException(
-                        "Not supported: all layers with parameters should override this method");
-    }
-
-    /**
-     * Get the updater for the given parameter. Typically the same updater will be used for all updaters, but this
-     * is not necessarily the case
-     *
-     * @param paramName    Parameter name
      * @return             IUpdater for the parameter
      */
-    public IUpdater getIUpdaterByParam(String paramName) {
+    public IUpdater getUpdaterByParam(String paramName) {
         throw new UnsupportedOperationException(
                         "Not supported: all layers with parameters should override this method");
     }
@@ -212,7 +238,10 @@ public abstract class Layer implements Serializable, Cloneable {
     @SuppressWarnings("unchecked")
     public abstract static class Builder<T extends Builder<T>> {
         protected String layerName = null;
-        protected double dropOut = Double.NaN;
+        protected List<LayerConstraint> allParamConstraints;
+        protected List<LayerConstraint> weightConstraints;
+        protected List<LayerConstraint> biasConstraints;
+        protected IDropout iDropout;
 
         /**
          * Layer name assigns layer string name.
@@ -244,9 +273,56 @@ public abstract class Layer implements Serializable, Cloneable {
          * </p>
          *
          * @param inputRetainProbability Dropout probability (probability of retaining each input activation value for a layer)
+         * @see #dropOut(IDropout)
          */
         public T dropOut(double inputRetainProbability) {
-            this.dropOut = inputRetainProbability;
+            return dropOut(new Dropout(inputRetainProbability));
+        }
+
+        /**
+         * Set the dropout for all layers in this network
+         *
+         * @param dropout Dropout, such as {@link Dropout}, {@link org.deeplearning4j.nn.conf.dropout.GaussianDropout},
+         *                {@link org.deeplearning4j.nn.conf.dropout.GaussianNoise} etc
+         */
+        public T dropOut(IDropout dropout){
+            this.iDropout = dropout;
+            return (T)this;
+        }
+
+        /**
+         * Set constraints to be applied to this layer. Default: no constraints.<br>
+         * Constraints can be used to enforce certain conditions (non-negativity of parameters, max-norm regularization,
+         * etc). These constraints are applied at each iteration, after the parameters have been updated.
+         *
+         * @param constraints Constraints to apply to all parameters of this layer
+         */
+        public T constrainAllParameters(LayerConstraint... constraints) {
+            this.allParamConstraints = Arrays.asList(constraints);
+            return (T) this;
+        }
+
+        /**
+         * Set constraints to be applied to bias parameters of this layer. Default: no constraints.<br>
+         * Constraints can be used to enforce certain conditions (non-negativity of parameters, max-norm regularization,
+         * etc). These constraints are applied at each iteration, after the parameters have been updated.
+         *
+         * @param constraints Constraints to apply to all bias parameters of this layer
+         */
+        public T constrainBias(LayerConstraint... constraints) {
+            this.biasConstraints = Arrays.asList(constraints);
+            return (T) this;
+        }
+
+        /**
+         * Set constraints to be applied to the weight parameters of this layer. Default: no constraints.<br>
+         * Constraints can be used to enforce certain conditions (non-negativity of parameters, max-norm regularization,
+         * etc). These constraints are applied at each iteration, after the parameters have been updated.
+         *
+         * @param constraints Constraints to apply to all weight parameters of this layer
+         */
+        public T constrainWeights(LayerConstraint... constraints) {
+            this.weightConstraints = Arrays.asList(constraints);
             return (T) this;
         }
 

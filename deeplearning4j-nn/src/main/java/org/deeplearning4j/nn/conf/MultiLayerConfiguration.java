@@ -79,6 +79,9 @@ public class MultiLayerConfiguration implements Serializable, Cloneable {
     // for Spark and model serialization
     protected int iterationCount = 0;
 
+    //Counter for the number of epochs completed so far. Used for per-epoch schedules
+    protected int epochCount = 0;
+
     /**
      *
      * @return  JSON representation of NN configuration
@@ -325,7 +328,7 @@ public class MultiLayerConfiguration implements Serializable, Cloneable {
             }
 
             //Pass input type through preprocessor, if necessary
-            InputPreProcessor preproc = getInputPreProcess(0);
+            InputPreProcessor preproc = getInputPreProcess(i);
             //TODO memory requirements for preprocessor
             if (preproc != null) {
                 inputType = preproc.getOutputType(inputType);

@@ -18,12 +18,12 @@
 
 package org.deeplearning4j.nn.api;
 
-import org.nd4j.linalg.primitives.Pair;
 import org.deeplearning4j.nn.conf.NeuralNetConfiguration;
 import org.deeplearning4j.nn.gradient.Gradient;
 import org.deeplearning4j.optimize.api.ConvexOptimizer;
 import org.deeplearning4j.optimize.api.IterationListener;
 import org.nd4j.linalg.api.ndarray.INDArray;
+import org.nd4j.linalg.primitives.Pair;
 
 import java.util.Collection;
 import java.util.Map;
@@ -145,14 +145,6 @@ public interface Model {
     void setBackpropGradientsViewArray(INDArray gradients);
 
     /**
-     * Update learningRate using for this model.
-     * Use the learningRateScoreBasedDecay to adapt the score
-     * if the Eps termination condition is met
-     */
-    void applyLearningRateScoreDecay();
-
-
-    /**
      * Fit the model to the given data
      * @param data the data to fit the model to
      */
@@ -264,4 +256,10 @@ public interface Model {
      * Clear input
      */
     void clear();
+
+
+    /**
+     * Apply any constraints to the model
+     */
+    void applyConstraints(int iteration, int epoch);
 }

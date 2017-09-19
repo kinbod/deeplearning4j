@@ -67,6 +67,8 @@ public class KerasLayerConfiguration {
     private final String LAYER_CLASS_NAME_CONVOLUTION_1D = ""; // 1: Convolution1D, 2: Conv1D
     private final String LAYER_CLASS_NAME_CONVOLUTION_2D = ""; // 1: Convolution2D, 2: Conv2D
     private final String LAYER_CLASS_NAME_LEAKY_RELU = "LeakyReLU";
+    private final String LAYER_CLASS_NAME_UPSAMPLING_1D = "UpSampling1D";
+    private final String LAYER_CLASS_NAME_UPSAMPLING_2D = "UpSampling2D";
 
 
     /* Partially shared layer configurations. */
@@ -99,7 +101,7 @@ public class KerasLayerConfiguration {
     private final String LAYER_FIELD_INNER_ACTIVATION = ""; // 1: inner_activation, 2: recurrent_activation
     private final String LAYER_FIELD_FORGET_BIAS_INIT = "forget_bias_init"; // keras 1 only: string
     private final String LAYER_FIELD_UNIT_FORGET_BIAS = "unit_forget_bias"; // keras 1 only: bool
-
+    private final String LAYER_FIELD_RETURN_SEQUENCES = "return_sequences";
 
     /* Embedding layer properties */
     private final String LAYER_FIELD_INPUT_DIM = "input_dim";
@@ -134,12 +136,15 @@ public class KerasLayerConfiguration {
     private final String LAYER_FIELD_FILTER_LENGTH = ""; // 1: filter_length, 2: kernel_size
     private final String LAYER_FIELD_SUBSAMPLE_LENGTH = ""; // 1: subsample_length, 2: strides
     private final String LAYER_FIELD_DILATION_RATE = ""; // 1: atrous_rate, 2: dilation_rate
+    private final String LAYER_FIELD_ZERO_PADDING = "padding";
 
     /* Pooling / Upsampling layer properties */
     private final String LAYER_FIELD_POOL_STRIDES = "strides";
     private final String LAYER_FIELD_POOL_1D_SIZE = ""; // 1: pool_length, 2: pool_size
     private final String LAYER_FIELD_POOL_1D_STRIDES = ""; // 1: stride, 2: strides
-    private final String LAYER_FIELD_UPSAMPLING_SIZE = ""; // 1: length, 2: size
+    private final String LAYER_FIELD_UPSAMPLING_1D_SIZE = ""; // 1: length, 2: size
+    private final String LAYER_FIELD_UPSAMPLING_2D_SIZE = "size";
+
 
     /* Keras convolution border modes. */
     private final String LAYER_FIELD_BORDER_MODE = ""; // 1: border_mode, 2: padding
@@ -161,13 +166,39 @@ public class KerasLayerConfiguration {
     private final String REGULARIZATION_TYPE_L2 = "l2";
 
     /* Keras constraints */
+    private final String LAYER_FIELD_MINMAX_NORM_CONSTRAINT = "MinMaxNorm";
+    private final String LAYER_FIELD_MINMAX_NORM_CONSTRAINT_ALIAS = "min_max_norm";
+    private final String LAYER_FIELD_MAX_NORM_CONSTRAINT = "MaxNorm";
+    private final String LAYER_FIELD_MAX_NORM_CONSTRAINT_ALIAS = "max_norm";
+    private final String LAYER_FIELD_MAX_NORM_CONSTRAINT_ALIAS_2 = "maxnorm";
+    private final String LAYER_FIELD_NON_NEG_CONSTRAINT = "NonNeg";
+    private final String LAYER_FIELD_NON_NEG_CONSTRAINT_ALIAS = "nonneg";
+    private final String LAYER_FIELD_NON_NEG_CONSTRAINT_ALIAS_2 = "non_neg";
+    private final String LAYER_FIELD_UNIT_NORM_CONSTRAINT = "UnitNorm";
+    private final String LAYER_FIELD_UNIT_NORM_CONSTRAINT_ALIAS = "unitnorm";
+    private final String LAYER_FIELD_UNIT_NORM_CONSTRAINT_ALIAS_2 = "unit_norm";
+    private final String LAYER_FIELD_CONSTRAINT_NAME = ""; // 1: name, 2: class_name
     private final String LAYER_FIELD_W_CONSTRAINT = ""; // 1: W_constraint, 2: kernel_constraint
     private final String LAYER_FIELD_B_CONSTRAINT = ""; // 1: b_constraint, 2: bias_constraint
+    private final String LAYER_FIELD_MAX_CONSTRAINT = ""; // 1: m, 2: max_value
+    private final String LAYER_FIELD_MINMAX_MIN_CONSTRAINT = ""; // 1: low, 2: min_value
+    private final String LAYER_FIELD_MINMAX_MAX_CONSTRAINT = ""; // 1: high, 2: max_value
+    private final String LAYER_FIELD_CONSTRAINT_DIM = "axis";
+    private final String LAYER_FIELD_CONSTRAINT_RATE = "rate";
 
 
     /* Keras weight initializers. */
     private final String LAYER_FIELD_INIT = ""; // 1: init, 2: kernel_initializer
     private final String LAYER_FIELD_BIAS_INIT = "bias_initializer"; // keras 2 only
+    private final String LAYER_FIELD_INIT_MEAN = "mean";
+    private final String LAYER_FIELD_INIT_STDDEV = "stddev";
+    private final String LAYER_FIELD_INIT_SCALE = "scale";
+    private final String LAYER_FIELD_INIT_MINVAL = "minval";
+    private final String LAYER_FIELD_INIT_MAXVAL = "maxval";
+    private final String LAYER_FIELD_INIT_VALUE = "value";
+    private final String LAYER_FIELD_INIT_GAIN = "gain";
+    private final String LAYER_FIELD_INIT_MODE = "mode";
+    private final String LAYER_FIELD_INIT_DISTRIBUTION = "distribution";
 
     private final String INIT_UNIFORM = "uniform";
     private final String INIT_RANDOM_UNIFORM = "random_uniform";

@@ -30,6 +30,7 @@ public class ActivationLayer extends org.deeplearning4j.nn.conf.layers.Layer {
     protected ActivationLayer(Builder builder) {
         super(builder);
         this.activationFn = builder.activationFn;
+        initializeConstraints(builder);
     }
 
     @Override
@@ -97,12 +98,6 @@ public class ActivationLayer extends org.deeplearning4j.nn.conf.layers.Layer {
                         .workingMemory(0, 0, 0, actElementsPerEx)
                         .cacheMemory(MemoryReport.CACHE_MODE_ALL_ZEROS, MemoryReport.CACHE_MODE_ALL_ZEROS) //No caching
                         .build();
-    }
-
-    @Override
-    public double getLearningRateByParam(String paramName) {
-        //Not applicable
-        return 0;
     }
 
     @Override
